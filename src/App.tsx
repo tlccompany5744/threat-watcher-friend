@@ -6,6 +6,13 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import EncryptPage from "./pages/EncryptPage";
+import DecryptPage from "./pages/DecryptPage";
+import DetectionPage from "./pages/DetectionPage";
+import IncidentPage from "./pages/IncidentPage";
+import AssistantPage from "./pages/AssistantPage";
+import ThreatIntelPage from "./pages/ThreatIntelPage";
+import LearningPage from "./pages/LearningPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,13 +27,13 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
-            <Route path="/encrypt" element={<Index />} />
-            <Route path="/decrypt" element={<Index />} />
-            <Route path="/detection" element={<Index />} />
-            <Route path="/incident" element={<Index />} />
-            <Route path="/assistant" element={<Index />} />
-            <Route path="/threat-intel" element={<Index />} />
-            <Route path="/learning" element={<Index />} />
+            <Route path="/encrypt" element={<EncryptPage />} />
+            <Route path="/decrypt" element={<DecryptPage />} />
+            <Route path="/detection" element={<DetectionPage />} />
+            <Route path="/incident" element={<IncidentPage />} />
+            <Route path="/assistant" element={<AssistantPage />} />
+            <Route path="/threat-intel" element={<ThreatIntelPage />} />
+            <Route path="/learning" element={<LearningPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
