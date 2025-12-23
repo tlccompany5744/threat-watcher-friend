@@ -161,14 +161,22 @@ const DecryptPage = () => {
     
     setTimeout(() => {
       const storedKey = localStorage.getItem('ransomware_key');
-      if (storedKey && decryptionKey === storedKey) {
+      if (!storedKey) {
+        addLog('❌ No encrypted files found. Run encryption simulation first.', 'danger');
+        toast.error('No encrypted files found. Run encryption simulation first.');
+        setKeyVerified(false);
+        return;
+      }
+      
+      if (decryptionKey === storedKey) {
         setKeyVerified(true);
-        addLog('✅ Key verified successfully!', 'success');
+        addLog('✅ Key verified successfully! Correct key provided.', 'success');
         toast.success('Key verified! Ready to decrypt.');
       } else {
-        addLog('⚠️ Key verification: Using provided key for decryption attempt', 'warning');
-        setKeyVerified(true);
-        toast.info('Key will be used for decryption attempt');
+        setKeyVerified(false);
+        addLog('❌ INVALID KEY! The decryption key does not match.', 'danger');
+        addLog('💡 Use the exact key shown after encryption simulation.', 'warning');
+        toast.error('Invalid decryption key! This key does not match the encryption key.');
       }
     }, 500);
   };
@@ -176,6 +184,11 @@ const DecryptPage = () => {
   const runDecryption = async () => {
     if (!decryptionKey) {
       toast.error('Please enter the decryption key');
+      return;
+    }
+
+    if (!keyVerified) {
+      toast.error('Please verify your key first before decrypting');
       return;
     }
 
@@ -189,7 +202,10 @@ const DecryptPage = () => {
     setDecryptionProgress(0);
     
     addLog('🛡️ INITIATING FILE RECOVERY PROCESS', 'info');
-    addLog('🔐 Loading decryption key...', 'info');
+    addLog('🔐 Loading verified decryption key...', 'info');
+    await new Promise(resolve => setTimeout(resolve, 500));
+    addLog('📂 Scanning for encrypted files...', 'info');
+    addLog(`📊 Found ${encryptedFiles.length} encrypted file(s)`, 'info');
     await new Promise(resolve => setTimeout(resolve, 500));
     addLog('📂 Scanning for encrypted files...', 'info');
     addLog(`📊 Found ${encryptedFiles.length} encrypted file(s)`, 'info');
