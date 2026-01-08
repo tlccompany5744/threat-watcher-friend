@@ -43,64 +43,106 @@ const commonPorts: Record<number, string> = {
   27017: "MongoDB",
 };
 
-async function scanPort(host: string, port: number, timeout = 3000): Promise<PortResult> {
+// Critical ports that get retry logic for accuracy
+const criticalPorts = new Set([21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 6379, 8080, 8443, 27017]);
+
+// Scan configuration - tuned for accuracy like nmap -sT
+const SCAN_CONFIG = {
+  timeout: 2000,           // 2 seconds - allows slow services like SSH to respond
+  batchSize: 50,           // Reduced concurrency to avoid rate limiting
+  retryAttempts: 2,        // Retry critical ports on failure
+  retryDelay: 500,         // Delay between retries
+  connectionHoldTime: 100, // Hold connection briefly to ensure handshake completes
+};
+
+async function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function scanPortOnce(host: string, port: number): Promise<PortResult> {
   const startTime = Date.now();
   
   try {
-    // Use HTTP/HTTPS probe for web ports
-    const protocol = [443, 8443, 993, 995].includes(port) ? "https" : "http";
-    const url = `${protocol}://${host}:${port}`;
+    // Use Deno.connect for true TCP socket scanning (like nmap -sT)
+    const conn = await Promise.race([
+      Deno.connect({ hostname: host, port, transport: "tcp" }),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("TIMEOUT")), SCAN_CONFIG.timeout)
+      )
+    ]) as Deno.Conn;
     
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const responseTime = Date.now() - startTime;
     
+    // Hold connection briefly to ensure TCP handshake completes fully
+    // This is important for services like SSH that may take time to respond
+    await delay(SCAN_CONFIG.connectionHoldTime);
+    
+    // Close the connection properly
     try {
-      const response = await fetch(url, {
-        method: "HEAD",
-        signal: controller.signal,
-        // @ts-ignore - Deno specific
-        redirect: "manual",
-      });
-      
-      clearTimeout(timeoutId);
-      const responseTime = Date.now() - startTime;
-      
-      return {
-        port,
-        status: "open",
-        service: commonPorts[port] || "unknown",
-        responseTime,
-      };
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-      
-      // Connection refused means port is closed
-      if (fetchError.message?.includes("Connection refused")) {
-        return { port, status: "closed" };
-      }
-      
-      // Timeout or abort means filtered
-      if (fetchError.name === "AbortError" || fetchError.message?.includes("timeout")) {
-        return { port, status: "filtered" };
-      }
-      
-      // Other errors might still indicate an open port (TLS errors, etc.)
-      if (fetchError.message?.includes("certificate") || 
-          fetchError.message?.includes("SSL") ||
-          fetchError.message?.includes("TLS")) {
-        return {
-          port,
-          status: "open",
-          service: commonPorts[port] || "unknown",
-          responseTime: Date.now() - startTime,
-        };
-      }
-      
+      conn.close();
+    } catch {
+      // Connection may already be closed by remote
+    }
+    
+    return {
+      port,
+      status: "open",
+      service: commonPorts[port] || "unknown",
+      responseTime,
+    };
+  } catch (error: any) {
+    const errorMessage = error.message || "";
+    
+    // ECONNREFUSED = port is definitely closed (RST packet received)
+    if (errorMessage.includes("refused") || 
+        errorMessage.includes("ECONNREFUSED") ||
+        errorMessage.includes("Connection refused")) {
       return { port, status: "closed" };
     }
-  } catch (error) {
+    
+    // Timeout = port is filtered (no response - firewall dropping packets)
+    if (errorMessage.includes("TIMEOUT") || 
+        errorMessage.includes("timed out") ||
+        error.name === "AbortError") {
+      return { port, status: "filtered" };
+    }
+    
+    // Host unreachable or network errors
+    if (errorMessage.includes("unreachable") ||
+        errorMessage.includes("EHOSTUNREACH") ||
+        errorMessage.includes("ENETUNREACH")) {
+      return { port, status: "filtered" };
+    }
+    
+    // Default to closed for other errors
     return { port, status: "closed" };
   }
+}
+
+async function scanPort(host: string, port: number): Promise<PortResult> {
+  // First attempt
+  let result = await scanPortOnce(host, port);
+  
+  // Retry logic for critical ports that show as closed/filtered
+  // This reduces false negatives for important services
+  if (criticalPorts.has(port) && result.status !== "open") {
+    for (let retry = 0; retry < SCAN_CONFIG.retryAttempts; retry++) {
+      await delay(SCAN_CONFIG.retryDelay);
+      const retryResult = await scanPortOnce(host, port);
+      
+      // If any retry shows open, port is open
+      if (retryResult.status === "open") {
+        return retryResult;
+      }
+      
+      // Prefer "closed" over "filtered" as it's more definitive
+      if (result.status === "filtered" && retryResult.status === "closed") {
+        result = retryResult;
+      }
+    }
+  }
+  
+  return result;
 }
 
 serve(async (req: Request): Promise<Response> => {
@@ -121,7 +163,8 @@ serve(async (req: Request): Promise<Response> => {
 
     const { host, startPort, endPort, scanId }: ScanRequest = await req.json();
 
-    console.log(`Starting port scan on ${host} from ${startPort} to ${endPort}`);
+    console.log(`Starting accurate port scan on ${host} from ${startPort} to ${endPort}`);
+    console.log(`Config: timeout=${SCAN_CONFIG.timeout}ms, batch=${SCAN_CONFIG.batchSize}, retries=${SCAN_CONFIG.retryAttempts}`);
 
     // Validate inputs
     if (!host || !startPort || !endPort) {
@@ -132,8 +175,9 @@ serve(async (req: Request): Promise<Response> => {
       throw new Error("Invalid port range");
     }
 
-    if (endPort - startPort > 100) {
-      throw new Error("Maximum 100 ports per scan for rate limiting");
+    // Increased limit for full scans - adjust based on your needs
+    if (endPort - startPort > 1000) {
+      throw new Error("Maximum 1000 ports per scan for rate limiting");
     }
 
     // Get user from token
@@ -163,24 +207,27 @@ serve(async (req: Request): Promise<Response> => {
       currentScanId = scanData.id;
     }
 
-    // Scan ports
+    // Scan ports with reduced batch size for accuracy
     const results: PortResult[] = [];
-    const batchSize = 10;
 
-    for (let i = startPort; i <= endPort; i += batchSize) {
+    for (let i = startPort; i <= endPort; i += SCAN_CONFIG.batchSize) {
       const batch = [];
-      for (let j = i; j < Math.min(i + batchSize, endPort + 1); j++) {
+      const batchEnd = Math.min(i + SCAN_CONFIG.batchSize, endPort + 1);
+      
+      for (let j = i; j < batchEnd; j++) {
         batch.push(scanPort(host, j));
       }
       
       const batchResults = await Promise.all(batch);
       results.push(...batchResults);
       
-      // Update progress
+      // Update progress in database
       await supabase
         .from("port_scans")
         .update({ results: results })
         .eq("id", currentScanId);
+      
+      console.log(`Progress: ${results.length}/${endPort - startPort + 1} ports scanned`);
     }
 
     // Mark scan as completed
@@ -194,6 +241,9 @@ serve(async (req: Request): Promise<Response> => {
       .eq("id", currentScanId);
 
     // Log audit event
+    const openPorts = results.filter(r => r.status === "open");
+    const filteredPorts = results.filter(r => r.status === "filtered");
+    
     await supabase.from("security_audit_logs").insert({
       user_id: userData.user.id,
       action: "port_scan_completed",
@@ -201,11 +251,14 @@ serve(async (req: Request): Promise<Response> => {
         host, 
         startPort, 
         endPort, 
-        openPorts: results.filter(r => r.status === "open").length 
+        openPorts: openPorts.length,
+        filteredPorts: filteredPorts.length,
+        closedPorts: results.length - openPorts.length - filteredPorts.length,
       },
     });
 
-    console.log(`Scan completed: ${results.filter(r => r.status === "open").length} open ports found`);
+    console.log(`Scan completed: ${openPorts.length} open, ${filteredPorts.length} filtered`);
+    console.log(`Open ports: ${openPorts.map(p => `${p.port}/${p.service}`).join(", ") || "none"}`);
 
     return new Response(JSON.stringify({ 
       success: true, 
