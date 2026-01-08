@@ -47,9 +47,9 @@ interface ScanHistory {
 // Common port presets
 const portPresets = [
   { name: "Web Ports", start: 80, end: 443 },
-  { name: "Common Services", start: 20, end: 25 },
-  { name: "Database Ports", start: 3306, end: 3306 },
-  { name: "Full Common", start: 1, end: 100 },
+  { name: "Common (1-1000)", start: 1, end: 1000 },
+  { name: "Well Known", start: 1, end: 1023 },
+  { name: "High Ports", start: 8000, end: 9000 },
 ];
 
 export default function PortScannerPage() {
@@ -135,8 +135,8 @@ export default function PortScannerPage() {
       return;
     }
 
-    if (endPort - startPort > 100) {
-      toast({ title: "Port range too large", description: "Maximum 100 ports per scan", variant: "destructive" });
+    if (endPort - startPort > 1000) {
+      toast({ title: "Port range too large", description: "Maximum 1000 ports per scan", variant: "destructive" });
       return;
     }
 
