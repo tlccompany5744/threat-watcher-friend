@@ -60,6 +60,8 @@ export type Database = {
       }
       phishing_campaigns: {
         Row: {
+          attachment_name: string | null
+          attachment_path: string | null
           body_html: string
           created_at: string
           id: string
@@ -72,6 +74,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          attachment_name?: string | null
+          attachment_path?: string | null
           body_html: string
           created_at?: string
           id?: string
@@ -84,6 +88,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          attachment_name?: string | null
+          attachment_path?: string | null
           body_html?: string
           created_at?: string
           id?: string

@@ -17,6 +17,8 @@ interface SendEmailRequest {
   senderName: string;
   senderEmail: string;
   trackingUrl: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
 }
 
 serve(async (req: Request): Promise<Response> => {
@@ -55,6 +57,8 @@ serve(async (req: Request): Promise<Response> => {
       senderName,
       senderEmail,
       trackingUrl,
+      attachmentUrl,
+      attachmentName,
     }: SendEmailRequest = await req.json();
 
     console.log(`📧 Sending phishing simulation email to ${targetEmail}`);
@@ -122,14 +126,43 @@ serve(async (req: Request): Promise<Response> => {
 
     console.log(`Sending email via Resend to: ${targetEmail}`);
 
-    // Send via Resend using their test domain
-    const emailResponse = await resend.emails.send({
+    // Prepare email options
+    const emailOptions: any = {
       from: `${senderName} <onboarding@resend.dev>`,
       to: [targetEmail],
       subject: `[SECURITY TRAINING] ${subject}`,
       html: emailHtml,
       replyTo: senderEmail,
-    });
+    };
+
+    // Add attachment if provided
+    if (attachmentUrl && attachmentName) {
+      try {
+        console.log(`Fetching attachment: ${attachmentName}`);
+        const attachmentResponse = await fetch(attachmentUrl);
+        
+        if (attachmentResponse.ok) {
+          const attachmentBuffer = await attachmentResponse.arrayBuffer();
+          const attachmentBase64 = btoa(
+            String.fromCharCode(...new Uint8Array(attachmentBuffer))
+          );
+          
+          emailOptions.attachments = [{
+            filename: attachmentName,
+            content: attachmentBase64,
+          }];
+          console.log(`Attachment added: ${attachmentName}`);
+        } else {
+          console.warn(`Failed to fetch attachment: ${attachmentResponse.status}`);
+        }
+      } catch (attachError) {
+        console.error("Error processing attachment:", attachError);
+        // Continue sending email without attachment
+      }
+    }
+
+    // Send via Resend
+    const emailResponse = await resend.emails.send(emailOptions);
 
     console.log("✅ Email sent successfully:", JSON.stringify(emailResponse));
 
