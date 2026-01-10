@@ -143,15 +143,22 @@ serve(async (req: Request): Promise<Response> => {
         
         if (attachmentResponse.ok) {
           const attachmentBuffer = await attachmentResponse.arrayBuffer();
-          const attachmentBase64 = btoa(
-            String.fromCharCode(...new Uint8Array(attachmentBuffer))
-          );
+          const uint8Array = new Uint8Array(attachmentBuffer);
+          
+          // Convert to base64 in chunks to avoid stack overflow
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < uint8Array.length; i += chunkSize) {
+            const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+            binary += String.fromCharCode.apply(null, Array.from(chunk));
+          }
+          const attachmentBase64 = btoa(binary);
           
           emailOptions.attachments = [{
             filename: attachmentName,
             content: attachmentBase64,
           }];
-          console.log(`Attachment added: ${attachmentName}`);
+          console.log(`Attachment added: ${attachmentName} (${uint8Array.length} bytes)`);
         } else {
           console.warn(`Failed to fetch attachment: ${attachmentResponse.status}`);
         }
