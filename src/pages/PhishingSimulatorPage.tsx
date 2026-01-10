@@ -27,7 +27,10 @@ import {
   BarChart3,
   FileText,
   Zap,
-  Shield
+  Shield,
+  Paperclip,
+  X,
+  Upload
 } from "lucide-react";
 
 interface Campaign {
@@ -39,6 +42,8 @@ interface Campaign {
   sender_email: string;
   status: string;
   created_at: string;
+  attachment_path?: string | null;
+  attachment_name?: string | null;
 }
 
 interface Target {
@@ -81,6 +86,8 @@ export default function PhishingSimulatorPage() {
     sender_name: "Security Team",
     sender_email: "security@yourdomain.com",
   });
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
 
   // New targets
   const [newTargetEmail, setNewTargetEmail] = useState("");
@@ -183,11 +190,38 @@ export default function PhishingSimulatorPage() {
 
     setIsCreating(true);
 
+    let attachmentPath: string | null = null;
+    let attachmentName: string | null = null;
+
+    // Upload attachment if provided
+    if (attachmentFile) {
+      setIsUploadingAttachment(true);
+      const fileExt = attachmentFile.name.split('.').pop();
+      const filePath = `${user?.id}/${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('campaign-attachments')
+        .upload(filePath, attachmentFile);
+
+      setIsUploadingAttachment(false);
+
+      if (uploadError) {
+        setIsCreating(false);
+        toast({ title: "Error uploading attachment", description: uploadError.message, variant: "destructive" });
+        return;
+      }
+
+      attachmentPath = filePath;
+      attachmentName = attachmentFile.name;
+    }
+
     const { data, error } = await supabase
       .from("phishing_campaigns")
       .insert({
         ...newCampaign,
         user_id: user?.id,
+        attachment_path: attachmentPath,
+        attachment_name: attachmentName,
       })
       .select()
       .single();
@@ -207,6 +241,7 @@ export default function PhishingSimulatorPage() {
         sender_name: "Security Team",
         sender_email: "security@yourdomain.com",
       });
+      setAttachmentFile(null);
     }
   };
 
@@ -260,6 +295,15 @@ export default function PhishingSimulatorPage() {
 
     for (const target of pendingTargets) {
       try {
+        // Get attachment URL if exists
+        let attachmentUrl: string | null = null;
+        if (selectedCampaign.attachment_path) {
+          const { data: urlData } = await supabase.storage
+            .from('campaign-attachments')
+            .createSignedUrl(selectedCampaign.attachment_path, 60 * 60 * 24); // 24h expiry
+          attachmentUrl = urlData?.signedUrl || null;
+        }
+
         const { error } = await supabase.functions.invoke("send-phishing-email", {
           body: {
             campaignId: selectedCampaign.id,
@@ -271,6 +315,8 @@ export default function PhishingSimulatorPage() {
             senderName: selectedCampaign.sender_name,
             senderEmail: selectedCampaign.sender_email,
             trackingUrl: window.location.origin + "/learning",
+            attachmentUrl: attachmentUrl,
+            attachmentName: selectedCampaign.attachment_name,
           }
         });
 
@@ -473,6 +519,54 @@ export default function PhishingSimulatorPage() {
                         onChange={(e) => setNewCampaign({ ...newCampaign, sender_email: e.target.value })}
                       />
                     </div>
+                  </div>
+
+                  {/* Optional Document Attachment */}
+                  <div>
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <Paperclip className="w-4 h-4" />
+                      Attachment (Optional)
+                    </label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Attach a document to include with the phishing simulation email
+                    </p>
+                    {attachmentFile ? (
+                      <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
+                        <FileText className="w-4 h-4 text-primary" />
+                        <span className="text-sm flex-1 truncate">{attachmentFile.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {(attachmentFile.size / 1024).toFixed(1)} KB
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setAttachmentFile(null)}
+                          className="h-6 w-6 p-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md cursor-pointer hover:bg-muted/50 transition-colors">
+                        <Upload className="w-5 h-5 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">Click to upload document</span>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.png,.jpg,.jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 5 * 1024 * 1024) {
+                                toast({ title: "File too large", description: "Maximum 5MB allowed", variant: "destructive" });
+                                return;
+                              }
+                              setAttachmentFile(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
                   </div>
 
                   <Button 
