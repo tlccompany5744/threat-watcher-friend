@@ -279,6 +279,45 @@ export default function PhishingSimulatorPage() {
       toast({ title: "Error removing target", description: error.message, variant: "destructive" });
     } else {
       setTargets(targets.filter(t => t.id !== targetId));
+      toast({ title: "Target removed" });
+    }
+  };
+
+  const deleteCampaign = async (campaignId: string) => {
+    // First delete all targets for this campaign
+    const { error: targetsError } = await supabase
+      .from("campaign_targets")
+      .delete()
+      .eq("campaign_id", campaignId);
+
+    if (targetsError) {
+      toast({ title: "Error deleting targets", description: targetsError.message, variant: "destructive" });
+      return;
+    }
+
+    // Delete attachment from storage if exists
+    const campaign = campaigns.find(c => c.id === campaignId);
+    if (campaign?.attachment_path) {
+      await supabase.storage
+        .from('campaign-attachments')
+        .remove([campaign.attachment_path]);
+    }
+
+    // Then delete the campaign
+    const { error } = await supabase
+      .from("phishing_campaigns")
+      .delete()
+      .eq("id", campaignId);
+
+    if (error) {
+      toast({ title: "Error deleting campaign", description: error.message, variant: "destructive" });
+    } else {
+      setCampaigns(campaigns.filter(c => c.id !== campaignId));
+      if (selectedCampaign?.id === campaignId) {
+        setSelectedCampaign(null);
+        setTargets([]);
+      }
+      toast({ title: "Campaign deleted" });
     }
   };
 
@@ -635,7 +674,6 @@ export default function PhishingSimulatorPage() {
                       campaigns.map((campaign) => (
                         <div
                           key={campaign.id}
-                          onClick={() => setSelectedCampaign(campaign)}
                           className={`p-4 rounded-lg border cursor-pointer transition-all ${
                             selectedCampaign?.id === campaign.id 
                               ? "border-primary bg-primary/5" 
@@ -643,13 +681,29 @@ export default function PhishingSimulatorPage() {
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <div>
+                            <div 
+                              className="flex-1"
+                              onClick={() => setSelectedCampaign(campaign)}
+                            >
                               <p className="font-medium">{campaign.name}</p>
                               <p className="text-sm text-muted-foreground truncate">
                                 {campaign.subject}
                               </p>
                             </div>
-                            {getStatusBadge(campaign.status)}
+                            <div className="flex items-center gap-2">
+                              {getStatusBadge(campaign.status)}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteCampaign(campaign.id);
+                                }}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       ))
@@ -760,7 +814,7 @@ export default function PhishingSimulatorPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => removeTarget(target.id)}
-                                disabled={target.status !== "pending"}
+                                title="Delete target"
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
