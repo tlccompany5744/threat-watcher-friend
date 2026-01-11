@@ -72,7 +72,7 @@ serve(async (req: Request): Promise<Response> => {
 
     console.log(`Tracking URLs configured: pixel=${trackingPixelUrl}`);
 
-    // Build email with tracking - clean professional format
+    // Build email with tracking - clean format (no security notices)
     const emailHtml = `
 <!DOCTYPE html>
 <html lang="en">
@@ -85,34 +85,10 @@ serve(async (req: Request): Promise<Response> => {
     <tr>
       <td align="center" style="padding: 40px 20px;">
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <!-- Security Training Banner -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; padding: 12px 20px; text-align: center; font-size: 13px; font-weight: 500; border-radius: 8px 8px 0 0;">
-              ⚠️ SECURITY AWARENESS SIMULATION - This is an authorized training exercise
-            </td>
-          </tr>
-          
           <!-- Main Content -->
           <tr>
-            <td style="padding: 40px 40px 30px;">
+            <td style="padding: 40px;">
               ${bodyHtml.replace(/\[CLICK_LINK\]/g, clickUrl).replace(/\[TARGET_NAME\]/g, targetName || 'User')}
-            </td>
-          </tr>
-          
-          <!-- Security Notice Footer -->
-          <tr>
-            <td style="padding: 0 40px 40px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8f9fa; border-left: 4px solid #ff6b35; border-radius: 0 4px 4px 0;">
-                <tr>
-                  <td style="padding: 20px;">
-                    <p style="margin: 0 0 8px 0; font-weight: 600; color: #333; font-size: 14px;">🔒 Security Training Notice</p>
-                    <p style="margin: 0; color: #666; font-size: 13px; line-height: 1.5;">
-                      This email is part of a controlled security awareness training conducted by your organization's security team. 
-                      No credentials are collected and no personal data is harvested.
-                    </p>
-                  </td>
-                </tr>
-              </table>
             </td>
           </tr>
         </table>
@@ -130,7 +106,7 @@ serve(async (req: Request): Promise<Response> => {
     const emailOptions: any = {
       from: `${senderName} <onboarding@resend.dev>`,
       to: [targetEmail],
-      subject: `[SECURITY TRAINING] ${subject}`,
+      subject: subject,
       html: emailHtml,
       replyTo: senderEmail,
     };
