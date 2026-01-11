@@ -93,6 +93,7 @@ export default function PhishingSimulatorPage() {
   const [newTargetEmail, setNewTargetEmail] = useState("");
   const [newTargetName, setNewTargetName] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [sendingTrainingTo, setSendingTrainingTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -351,6 +352,7 @@ export default function PhishingSimulatorPage() {
       case "delivered": return <CheckCircle2 className="w-4 h-4 text-green-500" />;
       case "opened": return <Eye className="w-4 h-4 text-yellow-500" />;
       case "clicked": return <MousePointer className="w-4 h-4 text-red-500" />;
+      case "training_assigned": return <AlertTriangle className="w-4 h-4 text-orange-500" />;
       case "failed": return <XCircle className="w-4 h-4 text-destructive" />;
       default: return <Clock className="w-4 h-4" />;
     }
@@ -363,21 +365,59 @@ export default function PhishingSimulatorPage() {
       delivered: "default",
       opened: "default",
       clicked: "destructive",
+      training_assigned: "secondary",
       failed: "destructive",
     };
-    return <Badge variant={variants[status] || "outline"}>{status.toUpperCase()}</Badge>;
+    return <Badge variant={variants[status] || "outline"}>{status === "training_assigned" ? "TRAINING" : status.toUpperCase()}</Badge>;
   };
 
   // Statistics
   const stats = {
     total: targets.length,
-    sent: targets.filter(t => ["sent", "delivered", "opened", "clicked"].includes(t.status)).length,
-    opened: targets.filter(t => ["opened", "clicked"].includes(t.status)).length,
-    clicked: targets.filter(t => t.status === "clicked").length,
+    sent: targets.filter(t => ["sent", "delivered", "opened", "clicked", "training_assigned"].includes(t.status)).length,
+    opened: targets.filter(t => ["opened", "clicked", "training_assigned"].includes(t.status)).length,
+    clicked: targets.filter(t => t.status === "clicked" || t.status === "training_assigned").length,
+    trainingAssigned: targets.filter(t => t.status === "training_assigned").length,
   };
 
   const openRate = stats.sent > 0 ? Math.round((stats.opened / stats.sent) * 100) : 0;
   const clickRate = stats.sent > 0 ? Math.round((stats.clicked / stats.sent) * 100) : 0;
+
+  const assignTraining = async (target: Target) => {
+    if (!selectedCampaign) return;
+    
+    setSendingTrainingTo(target.id);
+    
+    try {
+      const { error } = await supabase.functions.invoke("send-training-notification", {
+        body: {
+          targetId: target.id,
+          targetEmail: target.email,
+          targetName: target.name,
+          campaignName: selectedCampaign.name,
+          clickedAt: target.clicked_at,
+        }
+      });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Training Assigned", 
+        description: `Training notification sent to ${target.email}` 
+      });
+      
+      // Refresh targets to get updated status
+      fetchTargets(selectedCampaign.id);
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setSendingTrainingTo(null);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -776,12 +816,12 @@ export default function PhishingSimulatorPage() {
               </Card>
             </div>
 
-            {stats.clicked > 0 && (
+            {targets.filter(t => t.status === "clicked").length > 0 && (
               <Card className="border-destructive bg-destructive/5">
                 <CardHeader>
                   <CardTitle className="text-destructive flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5" />
-                    Vulnerable Users Identified
+                    Vulnerable Users - Pending Training
                   </CardTitle>
                   <CardDescription>
                     These users clicked on the simulated phishing link and need additional training
@@ -801,9 +841,55 @@ export default function PhishingSimulatorPage() {
                             <p className="text-sm text-destructive font-medium">
                               Clicked at: {new Date(target.clicked_at!).toLocaleString()}
                             </p>
-                            <Button variant="outline" size="sm" className="mt-1">
-                              Assign Training
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="mt-1"
+                              onClick={() => assignTraining(target)}
+                              disabled={sendingTrainingTo === target.id}
+                            >
+                              {sendingTrainingTo === target.id ? (
+                                <>Sending...</>
+                              ) : (
+                                <>
+                                  <Mail className="w-4 h-4 mr-1" />
+                                  Assign Training
+                                </>
+                              )}
                             </Button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {stats.trainingAssigned > 0 && (
+              <Card className="border-orange-500 bg-orange-500/5">
+                <CardHeader>
+                  <CardTitle className="text-orange-600 flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                    Training Assigned ({stats.trainingAssigned})
+                  </CardTitle>
+                  <CardDescription>
+                    These users have been notified and assigned to security awareness training
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {targets
+                      .filter(t => t.status === "training_assigned")
+                      .map((target) => (
+                        <div key={target.id} className="flex items-center justify-between p-3 rounded-lg bg-background border">
+                          <div>
+                            <p className="font-medium">{target.email}</p>
+                            <p className="text-sm text-muted-foreground">{target.name || "Unknown"}</p>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300">
+                              Training Notified
+                            </Badge>
                           </div>
                         </div>
                       ))}
