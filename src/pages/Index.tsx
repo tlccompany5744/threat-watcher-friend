@@ -2,10 +2,10 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
-import StatCard from '@/components/dashboard/StatCard';
-import ActivityFeed from '@/components/dashboard/ActivityFeed';
-import ThreatLevel from '@/components/dashboard/ThreatLevel';
-import { Shield, Lock, FileWarning, CheckCircle, Activity, AlertTriangle } from 'lucide-react';
+import RealTimeStats from '@/components/dashboard/RealTimeStats';
+import LiveActivityFeed from '@/components/dashboard/LiveActivityFeed';
+import LiveThreatLevel from '@/components/dashboard/LiveThreatLevel';
+import { Lock, CheckCircle, Activity, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
@@ -23,7 +23,7 @@ const Index = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse text-primary font-display text-xl">
-          LOADING SECURITY DASHBOARD...
+          INITIALIZING SYSTEM MONITORING...
         </div>
       </div>
     );
@@ -39,53 +39,20 @@ const Index = () => {
           SECURITY COMMAND CENTER
         </h1>
         <p className="text-muted-foreground font-mono mt-2">
-          Ransomware Simulation & Defense Training Platform
+          Real-Time System Monitoring & Security Dashboard
         </p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          title="Files Protected"
-          value="1,247"
-          icon={Shield}
-          variant="success"
-          trend="up"
-          trendValue="+12% from last scan"
-        />
-        <StatCard
-          title="Encryption Tests"
-          value="23"
-          icon={Lock}
-          variant="default"
-          trend="neutral"
-          trendValue="Lab environment"
-        />
-        <StatCard
-          title="Threats Detected"
-          value="0"
-          icon={FileWarning}
-          variant="success"
-          trend="neutral"
-          trendValue="All clear"
-        />
-        <StatCard
-          title="Recovery Rate"
-          value="100%"
-          icon={CheckCircle}
-          variant="success"
-          trend="up"
-          trendValue="Optimal status"
-        />
-      </div>
+      {/* Real-Time Stats Grid */}
+      <RealTimeStats />
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 mt-8">
         <div className="lg:col-span-2">
-          <ActivityFeed />
+          <LiveActivityFeed />
         </div>
         <div>
-          <ThreatLevel />
+          <LiveThreatLevel />
         </div>
       </div>
 
@@ -124,8 +91,18 @@ const Index = () => {
         </div>
       </div>
 
+      {/* Info Banner */}
+      <div className="mt-6 p-4 rounded-lg bg-primary/10 border border-primary/30">
+        <div className="flex items-center gap-3">
+          <Activity className="w-5 h-5 text-primary flex-shrink-0" />
+          <p className="text-sm font-mono text-primary">
+            <strong>LIVE MONITORING:</strong> Dashboard displays real system data using Browser APIs (CPU cores, memory, network, battery, performance metrics).
+          </p>
+        </div>
+      </div>
+
       {/* Warning Banner */}
-      <div className="mt-6 p-4 rounded-lg bg-warning/10 border border-warning/30">
+      <div className="mt-4 p-4 rounded-lg bg-warning/10 border border-warning/30">
         <div className="flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
           <p className="text-sm font-mono text-warning">
