@@ -26,7 +26,7 @@ const Auth = () => {
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [user, loading, navigate]);
 
@@ -55,7 +55,7 @@ const Auth = () => {
           }
         } else {
           toast.success('Access granted. Welcome back, operator.');
-          navigate('/');
+          navigate('/dashboard');
         }
       } else {
         const { error } = await signUp(email, password);
