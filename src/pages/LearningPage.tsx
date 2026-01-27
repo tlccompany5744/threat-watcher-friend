@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { extendedModules as extendedModulesData } from '@/data/learningModulesExtended';
 
 interface LiveLab {
   id: string;
@@ -5165,7 +5166,9 @@ interface IncidentRecord {
 }`
         }
       ]
-    }
+    },
+    // Extended modules imported separately for maintainability
+    ...extendedModulesData
   ]);
 
   useEffect(() => {
