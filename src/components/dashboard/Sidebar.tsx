@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Fish,
   Radar,
+  Crosshair,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,7 @@ const menuItems = [
   { icon: ClipboardList, label: 'Incident Response', path: '/incident' },
   { icon: Fish, label: 'Phishing Simulator', path: '/phishing-simulator' },
   { icon: Radar, label: 'Port Scanner', path: '/port-scanner' },
+  { icon: Crosshair, label: 'Cyber Range', path: '/cyber-range' },
   { icon: MessageSquare, label: 'AI Assistant', path: '/assistant' },
   { icon: Search, label: 'Threat Intel', path: '/threat-intel' },
   { icon: BookOpen, label: 'Learning Lab', path: '/learning' },
