@@ -22,9 +22,10 @@ type SimPhase = 'idle' | 'running' | 'decision' | 'post-decision' | 'complete';
 const CyberRangePage = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  // Poll system every 1.5s for real-time data
   const { systemInfo } = useSystemInfo(1500);
 
-  // Build real system data from live browser APIs
+  // Map browser APIs into simulation-compatible format
   const realSystemData = useMemo<RealSystemData | undefined>(() => {
     if (!systemInfo) return undefined;
     const memUsage = (systemInfo.memory.usedJSHeapSize && systemInfo.memory.jsHeapSizeLimit)
@@ -59,9 +60,11 @@ const CyberRangePage = () => {
   const [filesEncrypted, setFilesEncrypted] = useState(0);
   const [stageProgress, setStageProgress] = useState(0);
   const [currentMetrics, setCurrentMetrics] = useState<ReturnType<typeof generateMetricsForStage> | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [stageStartTime, setStageStartTime] = useState(0);
   const totalFiles = 1247;
 
-  // Timing
+  // Timing refs
   const simStartRef = useRef(0);
   const detectionTimeRef = useRef(0);
   const decisionStartRef = useRef(0);
@@ -83,51 +86,88 @@ const CyberRangePage = () => {
     setFilesEncrypted(0);
     setStageProgress(0);
     setCurrentMetrics(null);
+    setElapsedSeconds(0);
+    setStageStartTime(0);
     simStartRef.current = 0;
     detectionTimeRef.current = 0;
     decisionStartRef.current = 0;
     decisionTimeRef.current = 0;
   }, []);
 
-  const runSimulation = useCallback(async () => {
+  // ─── REAL-TIME SIMULATION ENGINE ───
+  // Instead of a scripted for-loop, we use an interval that:
+  // 1. Reads LIVE system telemetry every tick
+  // 2. Feeds it into the behavior analyzer
+  // 3. Advances kill-chain stages based on accumulated threat + time thresholds
+  // 4. Pauses at DEFENSE_TRIGGER for user decision
+
+  const startSimulation = useCallback(() => {
     resetSimulation();
     setPhase('running');
     simStartRef.current = Date.now();
+    setCurrentStageIdx(0);
+    setExpandedStage(0);
+    setStageStartTime(Date.now());
+    setKillChainLog([`${killChainSteps[0].label}: ${killChainSteps[0].description}`]);
+  }, [resetSimulation]);
 
-    for (let i = 0; i < killChainSteps.length; i++) {
-      const step = killChainSteps[i];
-      setCurrentStageIdx(i);
-      setExpandedStage(i);
-      setKillChainLog(prev => [...prev, `${step.label}: ${step.description}`]);
+  // Real-time tick: runs every 1.5s while simulation is active
+  useEffect(() => {
+    if (phase !== 'running' || currentStageIdx < 0) return;
 
-      // Update behavior analysis with REAL system data
-      const metrics = generateMetricsForStage(i, realSystemData);
+    const tick = () => {
+      const now = Date.now();
+      const totalElapsed = Math.round((now - simStartRef.current) / 1000);
+      setElapsedSeconds(totalElapsed);
+
+      // Generate metrics from REAL system data for current stage
+      const metrics = generateMetricsForStage(currentStageIdx, realSystemData);
       setCurrentMetrics(metrics);
       const analysis = analyzeBehavior(metrics);
       setBehaviorAnalysis(analysis);
 
-      // Simulate file encryption progress
-      if (i >= 2 && i <= 4) {
-        const encrypted = Math.round((i - 1) / 4 * totalFiles * (0.7 + Math.random() * 0.3));
-        setFilesEncrypted(encrypted);
+      // Calculate stage progress based on real time elapsed within stage
+      const stageElapsed = now - stageStartTime;
+      const stageDuration = killChainSteps[currentStageIdx]?.duration || 3000;
+      const progress = Math.min((stageElapsed / stageDuration) * 100, 100);
+      setStageProgress(progress);
+
+      // Update encrypted file count based on real metrics
+      if (currentStageIdx >= 2 && currentStageIdx <= 4) {
+        const encryptionRate = metrics.fileAccessRate * (metrics.entropyGrowth);
+        setFilesEncrypted(prev => {
+          const increment = Math.round(encryptionRate * 0.15);
+          return Math.min(prev + increment, totalFiles);
+        });
       }
 
-      // Progress animation within each stage
-      const steps_count = 10;
-      for (let p = 0; p <= steps_count; p++) {
-        setStageProgress((p / steps_count) * 100);
-        await new Promise(r => setTimeout(r, step.duration / steps_count));
-      }
+      // Advance to next stage when stage duration met (driven by real elapsed time)
+      if (stageElapsed >= stageDuration) {
+        const nextIdx = currentStageIdx + 1;
 
-      // At DEFENSE_TRIGGER, pause for user decision
-      if (step.stage === 'DEFENSE_TRIGGER') {
-        detectionTimeRef.current = Math.round((Date.now() - simStartRef.current) / 1000);
-        decisionStartRef.current = Date.now();
-        setPhase('decision');
-        return; // Wait for user decision
+        // At DEFENSE_TRIGGER (stage index 5), pause for user decision
+        if (killChainSteps[currentStageIdx]?.stage === 'DEFENSE_TRIGGER') {
+          detectionTimeRef.current = totalElapsed;
+          decisionStartRef.current = Date.now();
+          setPhase('decision');
+          return;
+        }
+
+        if (nextIdx < killChainSteps.length) {
+          setCurrentStageIdx(nextIdx);
+          setExpandedStage(nextIdx);
+          setStageStartTime(Date.now());
+          setStageProgress(0);
+          setKillChainLog(prev => [...prev, `${killChainSteps[nextIdx].label}: ${killChainSteps[nextIdx].description}`]);
+        }
       }
-    }
-  }, [resetSimulation, realSystemData]);
+    };
+
+    // Tick immediately + every 1.5s
+    tick();
+    const interval = setInterval(tick, 1500);
+    return () => clearInterval(interval);
+  }, [phase, currentStageIdx, realSystemData, stageStartTime]);
 
   const handleDecision = useCallback((chosen: string) => {
     decisionTimeRef.current = Math.round((Date.now() - decisionStartRef.current) / 1000);
@@ -135,7 +175,6 @@ const CyberRangePage = () => {
     setDecisionAdvice(getDecisionMentorAdvice(chosen, behaviorAnalysis?.threatScore || 0));
     setPhase('post-decision');
 
-    // Continue simulation with containment + recovery
     const continueSimulation = async () => {
       // Containment phase
       setCurrentStageIdx(6);
@@ -152,7 +191,11 @@ const CyberRangePage = () => {
       }
       setFilesEncrypted(finalEncrypted);
 
+      // Animate containment with real-time metrics
       for (let p = 0; p <= 10; p++) {
+        const metrics = generateMetricsForStage(6, realSystemData);
+        setCurrentMetrics(metrics);
+        setBehaviorAnalysis(analyzeBehavior(metrics));
         setStageProgress((p / 10) * 100);
         await new Promise(r => setTimeout(r, 200));
       }
@@ -163,13 +206,15 @@ const CyberRangePage = () => {
       setKillChainLog(prev => [...prev, `Recovery: Restoring ${totalFiles - finalEncrypted} files from backup`]);
 
       for (let p = 0; p <= 10; p++) {
+        const metrics = generateMetricsForStage(7, realSystemData);
+        setCurrentMetrics(metrics);
+        setBehaviorAnalysis(analyzeBehavior(metrics));
         setStageProgress((p / 10) * 100);
         await new Promise(r => setTimeout(r, 300));
       }
 
       const recoveryRate = chosen === 'MONITOR' ? 45 + Math.round(Math.random() * 20) : 85 + Math.round(Math.random() * 14);
 
-      // Calculate final score
       const scoreMetrics: ScoreMetrics = {
         detectionTime: detectionTimeRef.current,
         decisionTime: decisionTimeRef.current,
@@ -188,7 +233,7 @@ const CyberRangePage = () => {
     };
 
     setTimeout(continueSimulation, 1500);
-  }, [behaviorAnalysis, filesEncrypted]);
+  }, [behaviorAnalysis, filesEncrypted, realSystemData]);
 
   const exportReport = useCallback(() => {
     if (!scoreResult || !decision) return;
@@ -200,7 +245,7 @@ const CyberRangePage = () => {
       filesEncryptedBeforeAction: filesEncrypted,
       totalFiles,
       correctDecisionMade: decision === 'ISOLATE',
-      recoverySuccess: scoreResult.breakdown.find(b => b.metric === 'Recovery Success')?.score ? 
+      recoverySuccess: scoreResult.breakdown.find(b => b.metric === 'Recovery Success')?.score ?
         Math.round((scoreResult.breakdown.find(b => b.metric === 'Recovery Success')!.score / 10) * 100) : 90,
     };
     const report = generateForensicsReport(metrics, scoreResult, killChainLog, [decision]);
@@ -229,7 +274,7 @@ const CyberRangePage = () => {
             CYBER RANGE
           </h1>
           <p className="text-muted-foreground font-mono mt-1 text-sm">
-            Interactive ransomware decision-response training simulator
+            Interactive ransomware decision-response training simulator — powered by real-time system telemetry
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -254,8 +299,8 @@ const CyberRangePage = () => {
       {/* Controls */}
       <div className="flex flex-wrap gap-3 mb-6">
         {phase === 'idle' && (
-          <Button variant="danger" size="lg" onClick={runSimulation}>
-            <Play className="w-5 h-5 mr-2" /> LAUNCH SIMULATION
+          <Button variant="danger" size="lg" onClick={startSimulation}>
+            <Play className="w-5 h-5 mr-2" /> LAUNCH REAL-TIME SIMULATION
           </Button>
         )}
         {(phase === 'running' || phase === 'decision') && (
@@ -282,10 +327,13 @@ const CyberRangePage = () => {
             "bg-destructive animate-pulse"
           )} />
           <span className="font-mono text-sm text-muted-foreground uppercase">{phase}</span>
+          {phase === 'running' && (
+            <span className="font-mono text-xs text-destructive ml-2">{elapsedSeconds}s elapsed</span>
+          )}
         </div>
       </div>
 
-      {/* ─── REAL-TIME SYSTEM TELEMETRY ─── */}
+      {/* ─── REAL-TIME SYSTEM TELEMETRY — always visible ─── */}
       {systemInfo && (
         <div className="cyber-card p-4 border border-primary/30 mb-6">
           <div className="relative z-10">
@@ -296,7 +344,7 @@ const CyberRangePage = () => {
               </h3>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                <span className="text-xs font-mono text-success">REAL-TIME</span>
+                <span className="text-xs font-mono text-success">POLLING EVERY 1.5s</span>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -307,16 +355,16 @@ const CyberRangePage = () => {
               </div>
               <div className="text-center p-2 rounded bg-secondary/30">
                 <HardDrive className="w-4 h-4 text-accent mx-auto mb-1" />
-                <p className="text-xs font-mono text-muted-foreground">Memory</p>
+                <p className="text-xs font-mono text-muted-foreground">JS Heap</p>
                 <p className="text-sm font-display font-bold text-foreground">
-                  {systemInfo.memory.usedJSHeapSize 
+                  {systemInfo.memory.usedJSHeapSize
                     ? `${Math.round(systemInfo.memory.usedJSHeapSize / 1048576)}MB`
                     : `${systemInfo.memory.deviceMemory || '?'}GB`}
                 </p>
               </div>
               <div className="text-center p-2 rounded bg-secondary/30">
                 <Wifi className="w-4 h-4 text-success mx-auto mb-1" />
-                <p className="text-xs font-mono text-muted-foreground">Latency</p>
+                <p className="text-xs font-mono text-muted-foreground">RTT Latency</p>
                 <p className="text-sm font-display font-bold text-foreground">{systemInfo.network.rtt}ms</p>
               </div>
               <div className="text-center p-2 rounded bg-secondary/30">
@@ -335,14 +383,52 @@ const CyberRangePage = () => {
                 <p className="text-sm font-display font-bold text-foreground">{systemInfo.uptime}s</p>
               </div>
             </div>
+
+            {/* Live derived behavioral metrics — updates continuously during simulation */}
             {currentMetrics && phase !== 'idle' && (
               <div className="mt-3 pt-3 border-t border-border/50">
-                <p className="text-xs font-mono text-muted-foreground mb-2">DERIVED BEHAVIORAL METRICS (from real system data):</p>
+                <p className="text-xs font-mono text-muted-foreground mb-2">
+                  DERIVED BEHAVIORAL METRICS <span className="text-success">(computed from live system data)</span>:
+                </p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
-                  <span className="text-foreground/70">File Rate: <span className="text-primary">{currentMetrics.fileAccessRate}/s</span></span>
-                  <span className="text-foreground/70">Entropy: <span className="text-warning">{(currentMetrics.entropyGrowth * 100).toFixed(0)}%</span></span>
-                  <span className="text-foreground/70">Renames: <span className="text-destructive">{currentMetrics.renameSpeed}/s</span></span>
-                  <span className="text-foreground/70">Egress: <span className="text-accent">{currentMetrics.networkEgress} KB/s</span></span>
+                  <div className="p-2 rounded bg-secondary/20 border border-border/30">
+                    <span className="text-muted-foreground block">File Access Rate</span>
+                    <span className={cn(
+                      "text-lg font-bold",
+                      currentMetrics.fileAccessRate > 100 ? "text-destructive" :
+                      currentMetrics.fileAccessRate > 30 ? "text-warning" : "text-success"
+                    )}>{currentMetrics.fileAccessRate}/s</span>
+                  </div>
+                  <div className="p-2 rounded bg-secondary/20 border border-border/30">
+                    <span className="text-muted-foreground block">Entropy Growth</span>
+                    <span className={cn(
+                      "text-lg font-bold",
+                      currentMetrics.entropyGrowth > 0.7 ? "text-destructive" :
+                      currentMetrics.entropyGrowth > 0.4 ? "text-warning" : "text-success"
+                    )}>{(currentMetrics.entropyGrowth * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="p-2 rounded bg-secondary/20 border border-border/30">
+                    <span className="text-muted-foreground block">Rename Speed</span>
+                    <span className={cn(
+                      "text-lg font-bold",
+                      currentMetrics.renameSpeed > 50 ? "text-destructive" :
+                      currentMetrics.renameSpeed > 10 ? "text-warning" : "text-success"
+                    )}>{currentMetrics.renameSpeed}/s</span>
+                  </div>
+                  <div className="p-2 rounded bg-secondary/20 border border-border/30">
+                    <span className="text-muted-foreground block">Network Egress</span>
+                    <span className={cn(
+                      "text-lg font-bold",
+                      currentMetrics.networkEgress > 500 ? "text-destructive" :
+                      currentMetrics.networkEgress > 100 ? "text-warning" : "text-success"
+                    )}>{currentMetrics.networkEgress} KB/s</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono mt-2">
+                  <span className="text-foreground/70">CPU Spike: <span className="text-warning">{currentMetrics.cpuSpike}%</span></span>
+                  <span className="text-foreground/70">Dir Traversal: <span className="text-primary">{currentMetrics.directoryTraversal}</span></span>
+                  <span className="text-foreground/70">Registry Mods: <span className="text-accent">{currentMetrics.registryModifications}</span></span>
+                  <span className="text-foreground/70">Shadow Delete: <span className={currentMetrics.shadowCopyDeletion ? "text-destructive font-bold" : "text-success"}>{currentMetrics.shadowCopyDeletion ? 'YES' : 'NO'}</span></span>
                 </div>
               </div>
             )}
@@ -350,13 +436,13 @@ const CyberRangePage = () => {
         </div>
       )}
 
+      {/* ─── PILLAR 1: Kill-Chain Timeline ─── */}
       <div className="cyber-card p-5 border border-border mb-6">
         <div className="relative z-10">
           <h3 className="font-display text-lg font-bold text-foreground tracking-wider mb-4 flex items-center gap-2">
             <Target className="w-5 h-5 text-destructive" />
             RANSOMWARE KILL-CHAIN
           </h3>
-          {/* Timeline bar */}
           <div className="flex gap-1 mb-4 overflow-x-auto pb-2">
             {killChainSteps.map((step, idx) => {
               const isActive = idx === currentStageIdx;
@@ -384,12 +470,10 @@ const CyberRangePage = () => {
             })}
           </div>
 
-          {/* Stage progress */}
           {currentStage && phase !== 'idle' && phase !== 'complete' && (
             <Progress value={stageProgress} className="h-2 mb-4" />
           )}
 
-          {/* Expanded stage detail */}
           {expandedStage !== null && expandedStage <= currentStageIdx && (
             <div className="p-4 rounded-lg bg-secondary/20 border border-border/50 space-y-3 animate-fade-in">
               <h4 className="font-display text-sm font-bold text-foreground">
@@ -418,13 +502,15 @@ const CyberRangePage = () => {
             <h3 className="font-display text-lg font-bold text-foreground tracking-wider mb-4 flex items-center gap-2">
               <Brain className="w-5 h-5 text-primary" />
               AI BEHAVIORAL ANALYSIS
+              {phase === 'running' && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/20 text-destructive animate-pulse font-mono ml-auto">LIVE</span>
+              )}
             </h3>
             {behaviorAnalysis ? (
               <div className="space-y-4">
-                {/* Threat Gauge */}
                 <div className="text-center">
                   <div className={cn(
-                    "text-5xl font-display font-black",
+                    "text-5xl font-display font-black transition-all duration-300",
                     behaviorAnalysis.threatScore >= 80 && "text-destructive text-glow-red",
                     behaviorAnalysis.threatScore >= 55 && behaviorAnalysis.threatScore < 80 && "text-warning",
                     behaviorAnalysis.threatScore < 55 && "text-success"
@@ -448,7 +534,6 @@ const CyberRangePage = () => {
                     Confidence: {behaviorAnalysis.confidence}%
                   </p>
                 </div>
-                {/* Reasons */}
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {behaviorAnalysis.reasons.map((r, i) => (
                     <p key={i} className="font-mono text-xs text-foreground/80 flex items-start gap-2">
@@ -457,10 +542,21 @@ const CyberRangePage = () => {
                     </p>
                   ))}
                 </div>
+                {behaviorAnalysis.recommendations.length > 0 && (
+                  <div className="space-y-1 pt-2 border-t border-border/50">
+                    <p className="text-xs font-mono text-primary font-bold">RECOMMENDATIONS:</p>
+                    {behaviorAnalysis.recommendations.map((r, i) => (
+                      <p key={i} className="font-mono text-xs text-accent flex items-start gap-2">
+                        <Shield className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                        {r}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-muted-foreground font-mono text-sm text-center py-8">
-                Launch simulation to see behavioral analysis
+                Launch simulation to see real-time behavioral analysis
               </p>
             )}
           </div>
@@ -536,32 +632,14 @@ const CyberRangePage = () => {
               Choose your response strategy:
             </p>
             <div className="flex flex-wrap justify-center gap-4">
-              <Button
-                variant="cyber"
-                size="lg"
-                className="min-w-[200px]"
-                onClick={() => handleDecision('ISOLATE')}
-              >
-                <Shield className="w-5 h-5 mr-2" />
-                ISOLATE FILESYSTEM
+              <Button variant="cyber" size="lg" className="min-w-[200px]" onClick={() => handleDecision('ISOLATE')}>
+                <Shield className="w-5 h-5 mr-2" /> ISOLATE FILESYSTEM
               </Button>
-              <Button
-                variant="danger"
-                size="lg"
-                className="min-w-[200px]"
-                onClick={() => handleDecision('KILL')}
-              >
-                <Zap className="w-5 h-5 mr-2" />
-                KILL PROCESS
+              <Button variant="danger" size="lg" className="min-w-[200px]" onClick={() => handleDecision('KILL')}>
+                <Zap className="w-5 h-5 mr-2" /> KILL PROCESS
               </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                className="min-w-[200px]"
-                onClick={() => handleDecision('MONITOR')}
-              >
-                <Activity className="w-5 h-5 mr-2" />
-                CONTINUE MONITORING
+              <Button variant="outline" size="lg" className="min-w-[200px]" onClick={() => handleDecision('MONITOR')}>
+                <Activity className="w-5 h-5 mr-2" /> CONTINUE MONITORING
               </Button>
             </div>
             <div className="flex items-center justify-center gap-2 text-xs font-mono text-muted-foreground">
@@ -580,7 +658,7 @@ const CyberRangePage = () => {
               <Clock className="w-5 h-5 text-primary" />
               <div>
                 <p className="text-lg font-display font-bold text-foreground">
-                  {detectionTimeRef.current || Math.round((Date.now() - simStartRef.current) / 1000)}s
+                  {detectionTimeRef.current || elapsedSeconds}s
                 </p>
                 <p className="text-xs font-mono text-muted-foreground">Detection Time</p>
               </div>
@@ -623,7 +701,6 @@ const CyberRangePage = () => {
       {/* ─── PILLAR 5 & 6: Score + Forensics Report ─── */}
       {phase === 'complete' && scoreResult && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Scoring */}
           <div className="cyber-card p-6 border border-border">
             <div className="relative z-10">
               <h3 className="font-display text-lg font-bold text-foreground tracking-wider mb-4 flex items-center gap-2">
@@ -647,7 +724,6 @@ const CyberRangePage = () => {
                 </div>
                 <p className="font-mono text-sm text-foreground mt-3">{scoreResult.analystLevel}</p>
               </div>
-              {/* Breakdown */}
               <div className="space-y-3">
                 {scoreResult.breakdown.map((item, i) => (
                   <div key={i} className="space-y-1">
@@ -665,7 +741,6 @@ const CyberRangePage = () => {
             </div>
           </div>
 
-          {/* Feedback & Forensics */}
           <div className="cyber-card p-6 border border-border">
             <div className="relative z-10">
               <h3 className="font-display text-lg font-bold text-foreground tracking-wider mb-4 flex items-center gap-2">
@@ -702,7 +777,7 @@ const CyberRangePage = () => {
         <div className="flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
           <p className="text-xs font-mono text-warning">
-            <strong>EDUCATIONAL CYBER RANGE:</strong> This is an interactive decision-response simulator for cybersecurity training. No real malware is used. All simulations run safely in-browser.
+            <strong>REAL-TIME CYBER RANGE:</strong> This simulator reads live system telemetry (CPU, memory, network, battery) via browser APIs and blends it into the behavioral analysis engine. No OS-level access is required — all data comes from your browser's Navigator, Performance, and Battery APIs updated every 1.5 seconds.
           </p>
         </div>
       </div>
