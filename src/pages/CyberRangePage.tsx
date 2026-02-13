@@ -1,18 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useSystemInfo } from '@/hooks/useSystemInfo';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
   Crosshair, Play, Square, RotateCcw, Download, Shield, AlertTriangle,
   Brain, Trophy, Eye, Zap, ChevronRight, Clock, Target, BarChart3,
-  FileWarning, Activity, Lock, GraduationCap, Siren
+  FileWarning, Activity, Lock, GraduationCap, Siren, Cpu, Wifi, HardDrive
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { killChainSteps, type KillStage } from '@/simulation/killChain';
-import { analyzeBehavior, generateMetricsForStage, type BehaviorAnalysis } from '@/simulation/behaviorAnalyzer';
+import { analyzeBehavior, generateMetricsForStage, type BehaviorAnalysis, type RealSystemData } from '@/simulation/behaviorAnalyzer';
 import { getMentorInsight, getDecisionMentorAdvice, type MentorMode } from '@/simulation/mentorEngine';
 import { calculateScore, generateForensicsReport, type ScoreMetrics, type ScoreResult } from '@/simulation/scoringEngine';
 
@@ -21,6 +22,29 @@ type SimPhase = 'idle' | 'running' | 'decision' | 'post-decision' | 'complete';
 const CyberRangePage = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const { systemInfo } = useSystemInfo(1500);
+
+  // Build real system data from live browser APIs
+  const realSystemData = useMemo<RealSystemData | undefined>(() => {
+    if (!systemInfo) return undefined;
+    const memUsage = (systemInfo.memory.usedJSHeapSize && systemInfo.memory.jsHeapSizeLimit)
+      ? systemInfo.memory.usedJSHeapSize / systemInfo.memory.jsHeapSizeLimit
+      : 0;
+    return {
+      cpuCores: systemInfo.cpuCores || 4,
+      memoryUsageRatio: memUsage,
+      networkLatency: systemInfo.network.rtt,
+      networkDownlink: systemInfo.network.downlink,
+      isOnline: systemInfo.network.online,
+      resourceCount: systemInfo.performance.resources,
+      transferSizeKB: Math.round(systemInfo.performance.transferSize / 1024),
+      batteryLevel: systemInfo.battery?.level ?? null,
+      batteryCharging: systemInfo.battery?.charging ?? false,
+      pageLoadTime: systemInfo.performance.pageLoadTime,
+      screenPixels: systemInfo.screenWidth * systemInfo.screenHeight,
+      uptime: systemInfo.uptime,
+    };
+  }, [systemInfo]);
 
   // Simulation state
   const [phase, setPhase] = useState<SimPhase>('idle');
@@ -34,6 +58,7 @@ const CyberRangePage = () => {
   const [killChainLog, setKillChainLog] = useState<string[]>([]);
   const [filesEncrypted, setFilesEncrypted] = useState(0);
   const [stageProgress, setStageProgress] = useState(0);
+  const [currentMetrics, setCurrentMetrics] = useState<ReturnType<typeof generateMetricsForStage> | null>(null);
   const totalFiles = 1247;
 
   // Timing
@@ -57,6 +82,7 @@ const CyberRangePage = () => {
     setKillChainLog([]);
     setFilesEncrypted(0);
     setStageProgress(0);
+    setCurrentMetrics(null);
     simStartRef.current = 0;
     detectionTimeRef.current = 0;
     decisionStartRef.current = 0;
@@ -74,8 +100,9 @@ const CyberRangePage = () => {
       setExpandedStage(i);
       setKillChainLog(prev => [...prev, `${step.label}: ${step.description}`]);
 
-      // Update behavior analysis
-      const metrics = generateMetricsForStage(i);
+      // Update behavior analysis with REAL system data
+      const metrics = generateMetricsForStage(i, realSystemData);
+      setCurrentMetrics(metrics);
       const analysis = analyzeBehavior(metrics);
       setBehaviorAnalysis(analysis);
 
@@ -100,7 +127,7 @@ const CyberRangePage = () => {
         return; // Wait for user decision
       }
     }
-  }, [resetSimulation]);
+  }, [resetSimulation, realSystemData]);
 
   const handleDecision = useCallback((chosen: string) => {
     decisionTimeRef.current = Math.round((Date.now() - decisionStartRef.current) / 1000);
@@ -258,7 +285,71 @@ const CyberRangePage = () => {
         </div>
       </div>
 
-      {/* ─── PILLAR 1: Kill-Chain Timeline ─── */}
+      {/* ─── REAL-TIME SYSTEM TELEMETRY ─── */}
+      {systemInfo && (
+        <div className="cyber-card p-4 border border-primary/30 mb-6">
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display text-sm font-bold text-primary tracking-wider flex items-center gap-2">
+                <Cpu className="w-4 h-4" />
+                LIVE SYSTEM TELEMETRY
+              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                <span className="text-xs font-mono text-success">REAL-TIME</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              <div className="text-center p-2 rounded bg-secondary/30">
+                <Cpu className="w-4 h-4 text-primary mx-auto mb-1" />
+                <p className="text-xs font-mono text-muted-foreground">CPU Cores</p>
+                <p className="text-sm font-display font-bold text-foreground">{systemInfo.cpuCores}</p>
+              </div>
+              <div className="text-center p-2 rounded bg-secondary/30">
+                <HardDrive className="w-4 h-4 text-accent mx-auto mb-1" />
+                <p className="text-xs font-mono text-muted-foreground">Memory</p>
+                <p className="text-sm font-display font-bold text-foreground">
+                  {systemInfo.memory.usedJSHeapSize 
+                    ? `${Math.round(systemInfo.memory.usedJSHeapSize / 1048576)}MB`
+                    : `${systemInfo.memory.deviceMemory || '?'}GB`}
+                </p>
+              </div>
+              <div className="text-center p-2 rounded bg-secondary/30">
+                <Wifi className="w-4 h-4 text-success mx-auto mb-1" />
+                <p className="text-xs font-mono text-muted-foreground">Latency</p>
+                <p className="text-sm font-display font-bold text-foreground">{systemInfo.network.rtt}ms</p>
+              </div>
+              <div className="text-center p-2 rounded bg-secondary/30">
+                <Activity className="w-4 h-4 text-warning mx-auto mb-1" />
+                <p className="text-xs font-mono text-muted-foreground">Downlink</p>
+                <p className="text-sm font-display font-bold text-foreground">{systemInfo.network.downlink} Mbps</p>
+              </div>
+              <div className="text-center p-2 rounded bg-secondary/30">
+                <BarChart3 className="w-4 h-4 text-destructive mx-auto mb-1" />
+                <p className="text-xs font-mono text-muted-foreground">Resources</p>
+                <p className="text-sm font-display font-bold text-foreground">{systemInfo.performance.resources}</p>
+              </div>
+              <div className="text-center p-2 rounded bg-secondary/30">
+                <Clock className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
+                <p className="text-xs font-mono text-muted-foreground">Uptime</p>
+                <p className="text-sm font-display font-bold text-foreground">{systemInfo.uptime}s</p>
+              </div>
+            </div>
+            {currentMetrics && phase !== 'idle' && (
+              <div className="mt-3 pt-3 border-t border-border/50">
+                <p className="text-xs font-mono text-muted-foreground mb-2">DERIVED BEHAVIORAL METRICS (from real system data):</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
+                  <span className="text-foreground/70">File Rate: <span className="text-primary">{currentMetrics.fileAccessRate}/s</span></span>
+                  <span className="text-foreground/70">Entropy: <span className="text-warning">{(currentMetrics.entropyGrowth * 100).toFixed(0)}%</span></span>
+                  <span className="text-foreground/70">Renames: <span className="text-destructive">{currentMetrics.renameSpeed}/s</span></span>
+                  <span className="text-foreground/70">Egress: <span className="text-accent">{currentMetrics.networkEgress} KB/s</span></span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="cyber-card p-5 border border-border mb-6">
         <div className="relative z-10">
           <h3 className="font-display text-lg font-bold text-foreground tracking-wider mb-4 flex items-center gap-2">
