@@ -24,7 +24,7 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
 const menuItems = [
-  { icon: Activity, label: 'Dashboard', path: '/' },
+  { icon: Activity, label: 'Dashboard', path: '/dashboard' },
   { icon: Lock, label: 'Encrypt Simulation', path: '/encrypt' },
   { icon: Unlock, label: 'Decrypt & Recover', path: '/decrypt' },
   { icon: AlertTriangle, label: 'Detection Monitor', path: '/detection' },
