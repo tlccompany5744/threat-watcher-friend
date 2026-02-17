@@ -3,8 +3,8 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
-const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const WARNING_BEFORE_MS = 60 * 1000; // warn 1 minute before
+const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+const WARNING_BEFORE_MS = 60 * 1000;
 
 interface AuthContextType {
   user: User | null;
@@ -24,25 +24,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningShownRef = useRef(false);
+  const userRef = useRef<User | null>(null);
+
+  // Keep ref in sync
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const clearTimers = useCallback(() => {
-    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    if (logoutTimerRef.current) { clearTimeout(logoutTimerRef.current); logoutTimerRef.current = null; }
+    if (warningTimerRef.current) { clearTimeout(warningTimerRef.current); warningTimerRef.current = null; }
     warningShownRef.current = false;
   }, []);
 
-  const autoSignOut = useCallback(async () => {
+  const performSignOut = useCallback(async () => {
     clearTimers();
-    toast({
-      title: "⚠️ Session Expired",
-      description: "You have been logged out for security reasons due to inactivity.",
-      variant: "destructive",
-    });
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
+    // Force clear state in case onAuthStateChange doesn't fire
+    setUser(null);
+    setSession(null);
+    // Navigate to auth
+    window.location.href = '/auth';
   }, [clearTimers]);
 
   const resetInactivityTimer = useCallback(() => {
-    if (!user) return;
+    if (!userRef.current) return;
     clearTimers();
 
     warningTimerRef.current = setTimeout(() => {
@@ -50,35 +60,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         warningShownRef.current = true;
         toast({
           title: "⏱️ Session Expiring Soon",
-          description: "You will be logged out in 1 minute due to inactivity. Move your mouse or press a key to stay logged in.",
+          description: "You will be logged out in 1 minute due to inactivity.",
         });
       }
     }, SESSION_TIMEOUT_MS - WARNING_BEFORE_MS);
 
     logoutTimerRef.current = setTimeout(() => {
-      autoSignOut();
+      toast({
+        title: "⚠️ Session Expired",
+        description: "Logged out due to inactivity.",
+        variant: "destructive",
+      });
+      performSignOut();
     }, SESSION_TIMEOUT_MS);
-  }, [user, clearTimers, autoSignOut]);
+  }, [clearTimers, performSignOut]);
 
-  // Set up activity listeners to reset the timer
+  // Activity listeners
   useEffect(() => {
     if (!user) {
       clearTimers();
       return;
     }
 
-    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove'];
-
     const handleActivity = () => {
       warningShownRef.current = false;
       resetInactivityTimer();
     };
 
-    activityEvents.forEach(event => window.addEventListener(event, handleActivity, { passive: true }));
-    resetInactivityTimer(); // start timer on login
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove'];
+    events.forEach(e => window.addEventListener(e, handleActivity, { passive: true }));
+    resetInactivityTimer();
 
     return () => {
-      activityEvents.forEach(event => window.removeEventListener(event, handleActivity));
+      events.forEach(e => window.removeEventListener(e, handleActivity));
       clearTimers();
     };
   }, [user, resetInactivityTimer, clearTimers]);
@@ -107,20 +121,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signUp = async (email: string, password: string) => {
-    const redirectUrl = `${window.location.origin}/`;
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        emailRedirectTo: redirectUrl
-      }
+      options: { emailRedirectTo: `${window.location.origin}/` }
     });
     return { error: error as Error | null };
   };
 
   const signOut = async () => {
-    clearTimers();
-    await supabase.auth.signOut();
+    await performSignOut();
   };
 
   return (
