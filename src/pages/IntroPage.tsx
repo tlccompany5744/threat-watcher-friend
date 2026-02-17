@@ -23,13 +23,13 @@ const IntroPage = () => {
     // Show skip button after 3 seconds
     const skipTimer = setTimeout(() => setSkipVisible(true), 3000);
     
-    // Phase timings (total ~2.5 minutes)
+    // Phase timings (total ~30 seconds)
     const timings: Record<Phase, number> = {
-      boot: 8000,      // 8 seconds - boot sequence
-      matrix: 15000,   // 15 seconds - matrix rain intensifies
-      hacker: 40000,   // 40 seconds - hacker appears and types
-      message: 35000,  // 35 seconds - main message reveal
-      reveal: 20000,   // 20 seconds - final reveal
+      boot: 5000,      // 5 seconds - boot sequence
+      matrix: 5000,    // 5 seconds - matrix rain
+      hacker: 7000,    // 7 seconds - hacker appears
+      message: 7000,   // 7 seconds - main message
+      reveal: 5000,    // 5 seconds - final reveal
       complete: 0,
     };
 

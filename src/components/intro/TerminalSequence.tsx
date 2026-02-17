@@ -47,7 +47,7 @@ const TerminalSequence = ({ phase }: TerminalSequenceProps) => {
         clearInterval(interval);
         return prev;
       });
-    }, phase === 'boot' ? 700 : 1500);
+    }, phase === 'boot' ? 400 : 600);
 
     return () => clearInterval(interval);
   }, [phase]);
