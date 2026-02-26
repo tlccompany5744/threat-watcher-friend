@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { killChainSteps, type KillStage } from '@/simulation/killChain';
+import AgentTelemetryPanel from '@/components/dashboard/AgentTelemetryPanel';
 import { analyzeBehavior, generateMetricsForStage, type BehaviorAnalysis, type RealSystemData } from '@/simulation/behaviorAnalyzer';
 import { getMentorInsight, getDecisionMentorAdvice, type MentorMode } from '@/simulation/mentorEngine';
 import { calculateScore, generateForensicsReport, type ScoreMetrics, type ScoreResult } from '@/simulation/scoringEngine';
@@ -435,6 +436,9 @@ const CyberRangePage = () => {
           </div>
         </div>
       )}
+
+      {/* ─── AGENT TELEMETRY — Real file system events from local agent ─── */}
+      <AgentTelemetryPanel />
 
       {/* ─── PILLAR 1: Kill-Chain Timeline ─── */}
       <div className="cyber-card p-5 border border-border mb-6">
