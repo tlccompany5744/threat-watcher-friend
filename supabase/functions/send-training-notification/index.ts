@@ -1,10 +1,10 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "https://esm.sh/resend@4.0.0";
+import nodemailer from "npm:nodemailer@6.9.12";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 interface TrainingNotificationRequest {
@@ -21,12 +21,11 @@ serve(async (req: Request): Promise<Response> => {
   }
 
   try {
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
-    if (!resendApiKey) {
-      throw new Error("Email service not configured. Please add RESEND_API_KEY.");
+    const smtpUser = Deno.env.get("SMTP_USER");
+    const smtpPass = Deno.env.get("SMTP_PASS");
+    if (!smtpUser || !smtpPass) {
+      throw new Error("Email service not configured. Please add SMTP_USER and SMTP_PASS.");
     }
-
-    const resend = new Resend(resendApiKey);
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -63,24 +62,18 @@ serve(async (req: Request): Promise<Response> => {
     <tr>
       <td align="center" style="padding: 40px 20px;">
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <!-- Header -->
           <tr>
             <td style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); color: white; padding: 30px 40px; text-align: center; border-radius: 8px 8px 0 0;">
               <h1 style="margin: 0; font-size: 24px; font-weight: 600;">⚠️ Security Training Required</h1>
             </td>
           </tr>
-          
-          <!-- Main Content -->
           <tr>
             <td style="padding: 40px;">
               <p style="font-size: 16px; color: #333; margin: 0 0 20px;">Dear <strong>${userName}</strong>,</p>
-              
               <p style="font-size: 15px; color: #555; line-height: 1.6; margin: 0 0 20px;">
                 During a recent security awareness simulation, you were identified as having clicked on a simulated phishing link. 
                 This is an important learning opportunity to help protect yourself and our organization from real cyber threats.
               </p>
-
-              <!-- Alert Box -->
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 25px 0;">
                 <tr>
                   <td style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 20px; border-radius: 0 8px 8px 0;">
@@ -93,13 +86,10 @@ serve(async (req: Request): Promise<Response> => {
                   </td>
                 </tr>
               </table>
-
               <p style="font-size: 15px; color: #555; line-height: 1.6; margin: 0 0 20px;">
                 As a result, you have been enrolled in our <strong>Security Awareness Training Program</strong>. 
                 Our IT Security team will reach out to you shortly with training materials and schedule.
               </p>
-
-              <!-- What to Look For -->
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 25px 0;">
                 <tr>
                   <td style="background-color: #f0fdf4; border-left: 4px solid #16a34a; padding: 20px; border-radius: 0 8px 8px 0;">
@@ -115,19 +105,15 @@ serve(async (req: Request): Promise<Response> => {
                   </td>
                 </tr>
               </table>
-
               <p style="font-size: 15px; color: #555; line-height: 1.6; margin: 0 0 20px;">
                 Remember: Real phishing attacks can lead to data breaches, financial loss, and compromise of sensitive information. 
                 This training will help you better identify and avoid such threats in the future.
               </p>
-
               <p style="font-size: 15px; color: #555; margin: 0;">
                 If you have any questions, please contact your IT Security team.
               </p>
             </td>
           </tr>
-          
-          <!-- Footer -->
           <tr>
             <td style="background-color: #f8f9fa; padding: 25px 40px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
               <p style="margin: 0; font-size: 13px; color: #6b7280; text-align: center;">
@@ -144,14 +130,25 @@ serve(async (req: Request): Promise<Response> => {
 </html>
     `;
 
-    const emailResponse = await resend.emails.send({
-      from: "Security Team <onboarding@resend.dev>",
-      to: [targetEmail],
+    // Create SMTP transporter using Gmail
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+    });
+
+    const emailResponse = await transporter.sendMail({
+      from: `Security Team <${smtpUser}>`,
+      to: targetEmail,
       subject: "⚠️ Security Training Required - Phishing Simulation Alert",
       html: emailHtml,
     });
 
-    console.log("✅ Training notification sent:", JSON.stringify(emailResponse));
+    console.log("✅ Training notification sent:", emailResponse.messageId);
 
     // Update target with training assigned flag
     const { error: updateError } = await supabase
@@ -173,7 +170,7 @@ serve(async (req: Request): Promise<Response> => {
       details: { targetId, targetEmail, campaignName },
     });
 
-    return new Response(JSON.stringify({ success: true, emailResponse }), {
+    return new Response(JSON.stringify({ success: true, messageId: emailResponse.messageId }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
