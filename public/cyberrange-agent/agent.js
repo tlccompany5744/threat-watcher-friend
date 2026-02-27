@@ -1,14 +1,16 @@
 // ============================================
-// CyberRange Real-Time Agent
+// CyberRange Real-Time Agent (Cloud Edition)
 // ============================================
-// This agent monitors your local file system and sends
-// real-time telemetry to the backend via WebSocket.
+// Monitors your local file system and sends telemetry
+// directly to the cloud backend via HTTP POST.
+//
+// NO local backend/server needed!
 //
 // SETUP:
 //   1. Create a folder: mkdir agent && cd agent
 //   2. Run: npm init -y
 //   3. Add "type": "module" to package.json
-//   4. Run: npm install chokidar ws
+//   4. Run: npm install chokidar
 //   5. Copy this file as agent.js
 //   6. Run: node agent.js
 //
@@ -16,43 +18,48 @@
 // ============================================
 
 import chokidar from "chokidar";
-import WebSocket from "ws";
 
-const BACKEND_URL = "ws://localhost:4001";
-const WATCH_PATH = process.argv[2] || "./test-files"; // Default: watch a local test folder
+// ── CONFIGURATION ──────────────────────────────────
+// Your Lovable Cloud edge function URL
+const EDGE_FUNCTION_URL =
+  "https://tnnglbdsxuqchechqwvz.supabase.co/functions/v1/agent-telemetry";
 
-let ws;
-let reconnectTimer;
+const ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRubmdsYmRzeHVxY2hlY2hxd3Z6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTMzMDAsImV4cCI6MjA4MTk4OTMwMH0.4zclQMgyCDEXbZGwgMfs_IkYgRHZVgGPBPLy_zxR5rE";
 
-function connect() {
-  ws = new WebSocket(BACKEND_URL);
+const WATCH_PATH = process.argv[2] || "./test-files";
+const HOSTNAME =
+  process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown";
 
-  ws.on("open", () => {
-    console.log("✅ Connected to backend at", BACKEND_URL);
-    // Send handshake
-    ws.send(JSON.stringify({
-      type: "agent_connect",
-      hostname: process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown",
-      watchPath: WATCH_PATH,
-      time: Date.now()
-    }));
-  });
+// ── SEND TELEMETRY ─────────────────────────────────
+async function sendEvent(event, filePath) {
+  try {
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ANON_KEY}`,
+        apikey: ANON_KEY,
+      },
+      body: JSON.stringify({
+        event,
+        path: filePath,
+        hostname: HOSTNAME,
+      }),
+    });
 
-  ws.on("close", () => {
-    console.log("❌ Disconnected. Reconnecting in 3s...");
-    reconnectTimer = setTimeout(connect, 3000);
-  });
-
-  ws.on("error", (err) => {
-    console.error("WebSocket error:", err.message);
-  });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`❌ Send failed (${res.status}): ${text}`);
+    }
+  } catch (err) {
+    console.error("❌ Network error:", err.message);
+  }
 }
 
-// Start connection
-connect();
-
-// Watch file system
+// ── WATCH FILE SYSTEM ──────────────────────────────
 console.log(`👁️  Watching: ${WATCH_PATH}`);
+console.log(`📡 Sending to: Cloud backend`);
 console.log("   (Create/modify/delete files to generate telemetry)\n");
 
 const watcher = chokidar.watch(WATCH_PATH, {
@@ -61,40 +68,27 @@ const watcher = chokidar.watch(WATCH_PATH, {
   depth: 10,
   awaitWriteFinish: {
     stabilityThreshold: 200,
-    pollInterval: 100
-  }
+    pollInterval: 100,
+  },
 });
 
 watcher.on("all", (event, filePath) => {
-  const data = {
-    type: "file_event",
-    event,        // add, addDir, change, unlink, unlinkDir
-    path: filePath,
-    time: Date.now()
-  };
-
-  // Send to backend
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(data));
-  }
-
-  // Local log
-  const icon = {
-    add: "📄+",
-    addDir: "📁+",
-    change: "📝",
-    unlink: "🗑️",
-    unlinkDir: "🗑️📁"
-  }[event] || "❓";
+  const icon =
+    {
+      add: "📄+",
+      addDir: "📁+",
+      change: "📝",
+      unlink: "🗑️",
+      unlinkDir: "🗑️📁",
+    }[event] || "❓";
 
   console.log(`${icon} ${event.padEnd(10)} ${filePath}`);
+  sendEvent(event, filePath);
 });
 
 // Graceful shutdown
 process.on("SIGINT", () => {
   console.log("\n🛑 Agent shutting down...");
   watcher.close();
-  ws?.close();
-  clearTimeout(reconnectTimer);
   process.exit(0);
 });

@@ -3,7 +3,7 @@ import { useAgentTelemetry, type AgentEvent } from '@/hooks/useAgentTelemetry';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
-  Wifi, WifiOff, Trash2, Settings, FileText, FilePlus, FileX, FileEdit,
+  Wifi, WifiOff, Trash2, FileText, FilePlus, FileX, FileEdit,
   FolderOpen, Clock, Radio, AlertTriangle
 } from 'lucide-react';
 
@@ -25,13 +25,8 @@ const eventColors: Record<string, string> = {
 
 const AgentTelemetryPanel = () => {
   const [enabled, setEnabled] = useState(false);
-  const [wsUrl, setWsUrl] = useState('ws://localhost:4001');
-  const [showSettings, setShowSettings] = useState(false);
 
-  const { events, connected, error, clearEvents } = useAgentTelemetry({
-    url: wsUrl,
-    enabled,
-  });
+  const { events, connected, error, clearEvents } = useAgentTelemetry({ enabled });
 
   const getFileName = (path: string) => {
     const parts = path.replace(/\\/g, '/').split('/');
@@ -45,7 +40,6 @@ const AgentTelemetryPanel = () => {
     return parts.slice(-2).join('/');
   };
 
-  // Detect suspicious patterns
   const suspiciousCount = events.filter(e => {
     const ext = e.path.split('.').pop()?.toLowerCase();
     return e.event === 'add' && (ext === 'encrypted' || ext === 'locked' || ext === 'cry');
@@ -75,18 +69,11 @@ const AgentTelemetryPanel = () => {
                 ) : (
                   <>
                     <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-                    <span className="text-xs font-mono text-destructive">DISCONNECTED</span>
+                    <span className="text-xs font-mono text-destructive">CONNECTING...</span>
                   </>
                 )}
               </div>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowSettings(!showSettings)}
-            >
-              <Settings className="w-4 h-4" />
-            </Button>
             <Button
               size="sm"
               variant={enabled ? 'danger' : 'cyber'}
@@ -97,26 +84,6 @@ const AgentTelemetryPanel = () => {
             </Button>
           </div>
         </div>
-
-        {/* Settings */}
-        {showSettings && (
-          <div className="mb-4 p-3 rounded-lg bg-secondary/30 border border-border/50 space-y-2">
-            <label className="text-xs font-mono text-muted-foreground block">
-              WebSocket Backend URL:
-            </label>
-            <input
-              type="text"
-              value={wsUrl}
-              onChange={(e) => setWsUrl(e.target.value)}
-              className="w-full px-3 py-2 bg-background border border-border rounded font-mono text-sm text-foreground"
-              placeholder="ws://localhost:4001"
-              disabled={enabled}
-            />
-            <p className="text-xs font-mono text-muted-foreground">
-              Run your local agent + backend, then connect here to see real file system telemetry.
-            </p>
-          </div>
-        )}
 
         {error && (
           <div className="mb-3 p-2 rounded bg-destructive/10 border border-destructive/30 flex items-center gap-2">
@@ -198,13 +165,13 @@ const AgentTelemetryPanel = () => {
         {!enabled && (
           <div className="p-4 rounded-lg bg-secondary/20 border border-border/50">
             <p className="text-sm font-mono text-muted-foreground mb-3">
-              Connect to your local CyberRange agent to see <span className="text-primary">real file system telemetry</span>.
+              Connect to see <span className="text-primary">real file system telemetry</span> from your local agent.
             </p>
             <div className="space-y-2 text-xs font-mono text-foreground/70">
               <p className="text-primary font-bold">Quick Setup:</p>
-              <p>1. Run the backend: <code className="px-1 py-0.5 bg-secondary rounded text-accent">node server.js</code></p>
-              <p>2. Run the agent: <code className="px-1 py-0.5 bg-secondary rounded text-accent">node agent.js</code></p>
-              <p>3. Click <span className="text-success">"Connect Agent"</span> above</p>
+              <p>1. Run the agent: <code className="px-1 py-0.5 bg-secondary rounded text-accent">node agent.js</code></p>
+              <p>2. Click <span className="text-success">"Connect Agent"</span> above</p>
+              <p className="text-muted-foreground mt-2">No local backend needed — agent sends data directly to the cloud.</p>
             </div>
           </div>
         )}
