@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_telemetry: {
+        Row: {
+          created_at: string
+          event: string
+          hostname: string | null
+          id: string
+          path: string
+        }
+        Insert: {
+          created_at?: string
+          event: string
+          hostname?: string | null
+          id?: string
+          path: string
+        }
+        Update: {
+          created_at?: string
+          event?: string
+          hostname?: string | null
+          id?: string
+          path?: string
+        }
+        Relationships: []
+      }
       campaign_targets: {
         Row: {
           campaign_id: string
