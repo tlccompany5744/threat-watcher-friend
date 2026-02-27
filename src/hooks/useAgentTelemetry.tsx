@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface AgentEvent {
   id: string;
@@ -10,73 +11,83 @@ export interface AgentEvent {
 }
 
 interface UseAgentTelemetryOptions {
-  url: string;
   enabled: boolean;
 }
 
-export const useAgentTelemetry = ({ url, enabled }: UseAgentTelemetryOptions) => {
+export const useAgentTelemetry = ({ enabled }: UseAgentTelemetryOptions) => {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const connect = useCallback(() => {
-    if (!enabled || !url) return;
-
-    try {
-      setError(null);
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setConnected(true);
-        setError(null);
-      };
-
-      ws.onmessage = (msg) => {
-        try {
-          const data = JSON.parse(msg.data);
-          const agentEvent: AgentEvent = {
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 6),
-            type: data.type || 'unknown',
-            event: data.event || 'unknown',
-            path: data.path || '',
-            time: data.time || Date.now(),
-            receivedAt: new Date(),
-          };
-          setEvents(prev => [agentEvent, ...prev.slice(0, 99)]);
-        } catch {
-          // ignore malformed messages
-        }
-      };
-
-      ws.onclose = () => {
-        setConnected(false);
-        // Auto-reconnect after 3s
-        if (enabled) {
-          reconnectRef.current = setTimeout(connect, 3000);
-        }
-      };
-
-      ws.onerror = () => {
-        setError('Cannot connect to agent backend');
-        setConnected(false);
-      };
-    } catch {
-      setError('Invalid WebSocket URL');
-    }
-  }, [url, enabled]);
 
   useEffect(() => {
-    if (enabled) {
-      connect();
+    if (!enabled) {
+      setConnected(false);
+      return;
     }
-    return () => {
-      wsRef.current?.close();
-      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+
+    setError(null);
+
+    // Load recent events
+    const loadRecent = async () => {
+      const { data, error: fetchErr } = await supabase
+        .from('agent_telemetry')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (fetchErr) {
+        setError('Failed to load telemetry');
+        return;
+      }
+
+      if (data) {
+        setEvents(data.map((row: any) => ({
+          id: row.id,
+          type: 'file_event',
+          event: row.event,
+          path: row.path,
+          time: new Date(row.created_at).getTime(),
+          receivedAt: new Date(row.created_at),
+        })));
+      }
     };
-  }, [connect, enabled]);
+
+    loadRecent();
+
+    // Subscribe to realtime inserts
+    const channel = supabase
+      .channel('agent-telemetry-live')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'agent_telemetry' },
+        (payload) => {
+          const row = payload.new as any;
+          const agentEvent: AgentEvent = {
+            id: row.id,
+            type: 'file_event',
+            event: row.event,
+            path: row.path,
+            time: new Date(row.created_at).getTime(),
+            receivedAt: new Date(row.created_at),
+          };
+          setEvents(prev => [agentEvent, ...prev.slice(0, 99)]);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setConnected(true);
+          setError(null);
+        } else if (status === 'CHANNEL_ERROR') {
+          setError('Realtime connection failed');
+          setConnected(false);
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+      setConnected(false);
+    };
+  }, [enabled]);
 
   const clearEvents = useCallback(() => setEvents([]), []);
 

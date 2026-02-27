@@ -1,28 +1,19 @@
-# CyberRange Real-Time Agent & Backend
+# CyberRange Real-Time Agent (Cloud Edition)
 
 ## Quick Setup
 
-### 1. Backend (receives telemetry, broadcasts to dashboard)
-
-```bash
-mkdir backend && cd backend
-npm init -y
-# Add "type": "module" to package.json
-npm install ws express cors
-# Copy server.js here
-node server.js
-```
-
-### 2. Agent (monitors file system, sends telemetry)
+### 1. Agent (monitors file system, sends telemetry to cloud)
 
 ```bash
 mkdir agent && cd agent
 npm init -y
 # Add "type": "module" to package.json
-npm install chokidar ws
+npm install chokidar
 # Copy agent.js here
 node agent.js
 ```
+
+**No local backend/server needed!** The agent sends data directly to the cloud.
 
 By default the agent watches `./test-files`. Create that folder and add/modify/delete files to generate telemetry.
 
@@ -31,15 +22,15 @@ To watch a different path:
 node agent.js "C:/Users/YourName/Desktop/test-folder"
 ```
 
-### 3. Dashboard
+### 2. Dashboard
 
-Go to your CyberRange page → Click **"Connect Agent"** → It connects to `ws://localhost:4001`.
+Go to your CyberRange page → Click **"Connect Agent"** → Events appear in real-time.
 
 ## Architecture
 
 ```
-[Agent] --ws:4001--> [Backend Server] --ws:4001--> [Dashboard Browser]
-     watches files        relays events         displays in real-time
+[Agent on your PC] --HTTPS--> [Cloud Backend] --Realtime--> [Dashboard Browser]
+   watches files         stores events          displays live
 ```
 
 ⚠️ **Only run in isolated test environments (VMs)!**

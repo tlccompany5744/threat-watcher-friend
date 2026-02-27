@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.send-training-notification]
 verify_jwt = false
+
+[functions.agent-telemetry]
+verify_jwt = false
