@@ -116,17 +116,61 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error as Error | null };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      return { error: error as Error | null };
+    } catch (directError: any) {
+      // If direct call fails (e.g. iframe CORS), use the proxy edge function
+      console.log('Direct auth failed, using proxy...', directError?.message);
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke('auth-proxy', {
+          body: { action: 'login', email, password },
+        });
+        if (fnError) return { error: new Error(fnError.message) };
+        if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
+        if (data?.access_token) {
+          // Set the session manually from the proxy response
+          const { error: setError } = await supabase.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+          });
+          return { error: setError as Error | null };
+        }
+        return { error: new Error('Authentication failed') };
+      } catch (proxyError: any) {
+        return { error: new Error(proxyError?.message || 'Authentication failed') };
+      }
+    }
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: `${window.location.origin}/` }
-    });
-    return { error: error as Error | null };
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: `${window.location.origin}/` }
+      });
+      return { error: error as Error | null };
+    } catch (directError: any) {
+      console.log('Direct signup failed, using proxy...', directError?.message);
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke('auth-proxy', {
+          body: { action: 'signup', email, password, redirectTo: `${window.location.origin}/` },
+        });
+        if (fnError) return { error: new Error(fnError.message) };
+        if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
+        // If auto-confirm is on, data will contain access_token
+        if (data?.access_token) {
+          await supabase.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+          });
+        }
+        return { error: null };
+      } catch (proxyError: any) {
+        return { error: new Error(proxyError?.message || 'Signup failed') };
+      }
+    }
   };
 
   const signOut = async () => {
