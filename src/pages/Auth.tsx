@@ -70,8 +70,12 @@ const Auth = () => {
           setIsLogin(true);
         }
       }
-    } catch (error) {
-      toast.error('An unexpected error occurred');
+    } catch (error: any) {
+      if (error?.message?.includes('Failed to fetch')) {
+        toast.error('Network error: Try opening the app in a new tab or use the published URL');
+      } else {
+        toast.error('An unexpected error occurred');
+      }
     } finally {
       setIsLoading(false);
     }
