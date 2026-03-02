@@ -116,60 +116,84 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    // Try direct auth first
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return { error: error as Error | null };
-    } catch (directError: any) {
-      // If direct call fails (e.g. iframe CORS), use the proxy edge function
-      console.log('Direct auth failed, using proxy...', directError?.message);
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke('auth-proxy', {
-          body: { action: 'login', email, password },
-        });
-        if (fnError) return { error: new Error(fnError.message) };
-        if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
-        if (data?.access_token) {
-          // Set the session manually from the proxy response
-          const { error: setError } = await supabase.auth.setSession({
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-          });
-          return { error: setError as Error | null };
-        }
-        return { error: new Error('Authentication failed') };
-      } catch (proxyError: any) {
-        return { error: new Error(proxyError?.message || 'Authentication failed') };
+      const result = await supabase.auth.signInWithPassword({ email, password });
+      if (!result.error) return { error: null };
+      // If it's not a network error, return the auth error directly
+      if (!result.error.message?.includes('fetch')) {
+        return { error: result.error as Error };
       }
+      // Fall through to proxy for network errors
+      console.log('Direct auth returned network error, trying proxy...');
+    } catch (directError: any) {
+      console.log('Direct auth threw exception, trying proxy...', directError?.message);
+    }
+
+    // Fallback: use the auth-proxy edge function
+    try {
+      const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-proxy`;
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ action: 'login', email, password }),
+      });
+      const data = await response.json();
+      if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
+      if (data?.access_token) {
+        const { error: setError } = await supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+        });
+        return { error: setError as Error | null };
+      }
+      return { error: new Error('Authentication failed') };
+    } catch (proxyError: any) {
+      return { error: new Error(proxyError?.message || 'Authentication failed') };
     }
   };
 
   const signUp = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const result = await supabase.auth.signUp({
         email,
         password,
         options: { emailRedirectTo: `${window.location.origin}/` }
       });
-      return { error: error as Error | null };
-    } catch (directError: any) {
-      console.log('Direct signup failed, using proxy...', directError?.message);
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke('auth-proxy', {
-          body: { action: 'signup', email, password, redirectTo: `${window.location.origin}/` },
-        });
-        if (fnError) return { error: new Error(fnError.message) };
-        if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
-        // If auto-confirm is on, data will contain access_token
-        if (data?.access_token) {
-          await supabase.auth.setSession({
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-          });
-        }
-        return { error: null };
-      } catch (proxyError: any) {
-        return { error: new Error(proxyError?.message || 'Signup failed') };
+      if (!result.error) return { error: null };
+      if (!result.error.message?.includes('fetch')) {
+        return { error: result.error as Error };
       }
+      console.log('Direct signup returned network error, trying proxy...');
+    } catch (directError: any) {
+      console.log('Direct signup threw exception, trying proxy...', directError?.message);
+    }
+
+    // Fallback: use the auth-proxy edge function
+    try {
+      const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-proxy`;
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ action: 'signup', email, password, redirectTo: `${window.location.origin}/` }),
+      });
+      const data = await response.json();
+      if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
+      if (data?.access_token) {
+        await supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+        });
+      }
+      return { error: null };
+    } catch (proxyError: any) {
+      return { error: new Error(proxyError?.message || 'Signup failed') };
     }
   };
 
