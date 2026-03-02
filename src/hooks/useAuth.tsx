@@ -130,19 +130,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('Direct auth threw exception, trying proxy...', directError?.message);
     }
 
-    // Fallback: use the auth-proxy edge function
+    // Fallback: use the auth-proxy edge function via supabase.functions.invoke
     try {
-      const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-proxy`;
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-        body: JSON.stringify({ action: 'login', email, password }),
+      const { data, error: invokeError } = await supabase.functions.invoke('auth-proxy', {
+        body: { action: 'login', email, password },
       });
-      const data = await response.json();
-      if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
+      if (invokeError) return { error: new Error(invokeError.message || 'Authentication failed') };
+      if (data?.error || data?.msg === 'Invalid login credentials') {
+        return { error: new Error(data.error_description || data.msg || data.error || 'Invalid credentials') };
+      }
       if (data?.access_token) {
         const { error: setError } = await supabase.auth.setSession({
           access_token: data.access_token,
@@ -172,18 +168,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('Direct signup threw exception, trying proxy...', directError?.message);
     }
 
-    // Fallback: use the auth-proxy edge function
+    // Fallback: use the auth-proxy edge function via supabase.functions.invoke
     try {
-      const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-proxy`;
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-        body: JSON.stringify({ action: 'signup', email, password, redirectTo: `${window.location.origin}/` }),
+      const { data, error: invokeError } = await supabase.functions.invoke('auth-proxy', {
+        body: { action: 'signup', email, password, redirectTo: `${window.location.origin}/` },
       });
-      const data = await response.json();
+      if (invokeError) return { error: new Error(invokeError.message || 'Signup failed') };
       if (data?.error) return { error: new Error(data.error_description || data.error || data.msg) };
       if (data?.access_token) {
         await supabase.auth.setSession({
