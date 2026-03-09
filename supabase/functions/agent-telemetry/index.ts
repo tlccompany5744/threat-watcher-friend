@@ -13,7 +13,8 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { event, path, hostname } = body;
+    // Support both formats: { event, path, hostname } and { event, path, time, agent }
+    const { event, path, hostname, agent, time } = body;
 
     if (!event || !path) {
       return new Response(
@@ -30,10 +31,11 @@ Deno.serve(async (req) => {
     const { error } = await supabase.from("agent_telemetry").insert({
       event,
       path,
-      hostname: hostname || null,
+      hostname: hostname || agent || "unknown",
     });
 
     if (error) {
+      console.error("DB insert error:", error.message);
       return new Response(
         JSON.stringify({ error: error.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -45,6 +47,7 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
+    console.error("Function error:", err.message);
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
