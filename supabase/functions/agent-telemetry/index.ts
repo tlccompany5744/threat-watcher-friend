@@ -13,7 +13,11 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { event, path, hostname, agent, time, process: processInfo } = body;
+    const event = body.event;
+    const path = body.path;
+    const hostname = body.hostname;
+    const agent = body.agent;
+    const processInfo = body.process || null;
 
     if (!event || !path) {
       return new Response(
