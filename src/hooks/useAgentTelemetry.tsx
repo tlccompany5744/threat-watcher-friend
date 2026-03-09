@@ -6,6 +6,7 @@ export interface AgentEvent {
   type: string;
   event: string;
   path: string;
+  process: string | null;
   time: number;
   receivedAt: Date;
 }
@@ -27,7 +28,6 @@ export const useAgentTelemetry = ({ enabled }: UseAgentTelemetryOptions) => {
 
     setError(null);
 
-    // Load recent events
     const loadRecent = async () => {
       const { data, error: fetchErr } = await supabase
         .from('agent_telemetry')
@@ -46,6 +46,7 @@ export const useAgentTelemetry = ({ enabled }: UseAgentTelemetryOptions) => {
           type: 'file_event',
           event: row.event,
           path: row.path,
+          process: row.process || null,
           time: new Date(row.created_at).getTime(),
           receivedAt: new Date(row.created_at),
         })));
@@ -54,7 +55,6 @@ export const useAgentTelemetry = ({ enabled }: UseAgentTelemetryOptions) => {
 
     loadRecent();
 
-    // Subscribe to realtime inserts
     const channel = supabase
       .channel('agent-telemetry-live')
       .on(
@@ -67,6 +67,7 @@ export const useAgentTelemetry = ({ enabled }: UseAgentTelemetryOptions) => {
             type: 'file_event',
             event: row.event,
             path: row.path,
+            process: row.process || null,
             time: new Date(row.created_at).getTime(),
             receivedAt: new Date(row.created_at),
           };
