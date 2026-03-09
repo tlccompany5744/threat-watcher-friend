@@ -2,27 +2,32 @@
 
 ## Quick Setup
 
-### 1. Agent (monitors file system, sends telemetry to cloud)
+```bash
+mkdir cyber-agent && cd cyber-agent
+npm init -y
+```
+
+Add `"type": "module"` to your package.json, then:
 
 ```bash
-mkdir agent && cd agent
-npm init -y
-# Add "type": "module" to package.json
 npm install chokidar
-# Copy agent.js here
+```
+
+Copy `agent.js` into the folder, create a test folder, and run:
+
+```bash
+mkdir test-files
 node agent.js
 ```
 
 **No local backend/server needed!** The agent sends data directly to the cloud.
-
-By default the agent watches `./test-files`. Create that folder and add/modify/delete files to generate telemetry.
 
 To watch a different path:
 ```bash
 node agent.js "C:/Users/YourName/Desktop/test-folder"
 ```
 
-### 2. Dashboard
+## Dashboard
 
 Go to your CyberRange page → Click **"Connect Agent"** → Events appear in real-time.
 
