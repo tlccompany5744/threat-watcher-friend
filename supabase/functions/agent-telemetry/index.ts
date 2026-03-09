@@ -13,8 +13,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    // Support both formats: { event, path, hostname } and { event, path, time, agent }
-    const { event, path, hostname, agent, time } = body;
+    const { event, path, hostname, agent, time, process: processInfo } = body;
 
     if (!event || !path) {
       return new Response(
@@ -32,6 +31,7 @@ Deno.serve(async (req) => {
       event,
       path,
       hostname: hostname || agent || "unknown",
+      process: processInfo || null,
     });
 
     if (error) {

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
   Wifi, WifiOff, Trash2, FileText, FilePlus, FileX, FileEdit,
-  FolderOpen, Clock, Radio, AlertTriangle
+  FolderOpen, Clock, Radio, AlertTriangle, Monitor
 } from 'lucide-react';
 
 const eventIcons: Record<string, typeof FileText> = {
@@ -127,7 +127,7 @@ const AgentTelemetryPanel = () => {
                 </Button>
               )}
             </div>
-            <div className="max-h-64 overflow-y-auto space-y-1">
+            <div className="max-h-80 overflow-y-auto space-y-1.5">
               {events.length === 0 ? (
                 <p className="text-xs font-mono text-muted-foreground text-center py-6">
                   Waiting for file system events from agent...
@@ -139,20 +139,30 @@ const AgentTelemetryPanel = () => {
                   return (
                     <div
                       key={evt.id}
-                      className="flex items-center gap-2 p-2 rounded bg-secondary/20 border border-border/30 text-xs font-mono"
+                      className="p-2.5 rounded bg-secondary/20 border border-border/30 text-xs font-mono"
                     >
-                      <Icon className={cn("w-3.5 h-3.5 flex-shrink-0", color)} />
-                      <span className={cn("font-bold uppercase w-14 flex-shrink-0", color)}>
-                        {evt.event}
-                      </span>
-                      <span className="text-foreground truncate flex-1" title={evt.path}>
-                        <span className="text-muted-foreground">{getFileDir(evt.path)}/</span>
-                        {getFileName(evt.path)}
-                      </span>
-                      <span className="text-muted-foreground flex-shrink-0 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {evt.receivedAt.toLocaleTimeString()}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Icon className={cn("w-3.5 h-3.5 flex-shrink-0", color)} />
+                        <span className={cn("font-bold uppercase w-14 flex-shrink-0", color)}>
+                          {evt.event}
+                        </span>
+                        <span className="text-foreground truncate flex-1" title={evt.path}>
+                          <span className="text-muted-foreground">{getFileDir(evt.path)}/</span>
+                          {getFileName(evt.path)}
+                        </span>
+                        <span className="text-muted-foreground flex-shrink-0 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {evt.receivedAt.toLocaleTimeString()}
+                        </span>
+                      </div>
+                      {/* Process info row */}
+                      {evt.process && (
+                        <div className="flex items-center gap-2 mt-1.5 ml-5 pl-0.5 border-l-2 border-primary/30 pl-2">
+                          <Monitor className="w-3 h-3 text-primary flex-shrink-0" />
+                          <span className="text-primary font-semibold">Process:</span>
+                          <span className="text-accent">{evt.process}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -165,13 +175,16 @@ const AgentTelemetryPanel = () => {
         {!enabled && (
           <div className="p-4 rounded-lg bg-secondary/20 border border-border/50">
             <p className="text-sm font-mono text-muted-foreground mb-3">
-              Connect to see <span className="text-primary">real file system telemetry</span> from your local agent.
+              Connect to see <span className="text-primary">real file system telemetry</span> with <span className="text-accent">process detection</span> from your local agent.
             </p>
             <div className="space-y-2 text-xs font-mono text-foreground/70">
               <p className="text-primary font-bold">Quick Setup:</p>
-              <p>1. Run the agent: <code className="px-1 py-0.5 bg-secondary rounded text-accent">node agent.js</code></p>
-              <p>2. Click <span className="text-success">"Connect Agent"</span> above</p>
-              <p className="text-muted-foreground mt-2">No local backend needed — agent sends data directly to the cloud.</p>
+              <p>1. <code className="px-1 py-0.5 bg-secondary rounded text-accent">npm install chokidar ps-list</code></p>
+              <p>2. Run the agent: <code className="px-1 py-0.5 bg-secondary rounded text-accent">node agent.js</code></p>
+              <p>3. Click <span className="text-success">"Connect Agent"</span> above</p>
+              <p className="text-muted-foreground mt-2">
+                Optional: Install <span className="text-warning">Sysmon</span> on Windows for exact process-file mapping (kernel-level detection).
+              </p>
             </div>
           </div>
         )}
