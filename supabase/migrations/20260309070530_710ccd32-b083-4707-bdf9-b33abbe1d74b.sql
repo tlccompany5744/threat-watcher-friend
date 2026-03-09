@@ -1,0 +1,1 @@
+ALTER TABLE public.agent_telemetry ADD COLUMN process text;
