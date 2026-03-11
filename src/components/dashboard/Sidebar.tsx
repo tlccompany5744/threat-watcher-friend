@@ -30,6 +30,7 @@ const menuItems = [
   { icon: AlertTriangle, label: 'Detection Monitor', path: '/detection' },
   { icon: ClipboardList, label: 'Incident Response', path: '/incident' },
   { icon: Fish, label: 'Phishing Simulator', path: '/phishing-simulator' },
+  { icon: Shield, label: 'Phishing Detector', path: '/phishing-detector' },
   { icon: Radar, label: 'Port Scanner', path: '/port-scanner' },
   { icon: Crosshair, label: 'Cyber Range', path: '/cyber-range' },
   { icon: MessageSquare, label: 'AI Assistant', path: '/assistant' },

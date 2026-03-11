@@ -15,6 +15,7 @@ import AssistantPage from "./pages/AssistantPage";
 import ThreatIntelPage from "./pages/ThreatIntelPage";
 import LearningPage from "./pages/LearningPage";
 import PhishingSimulatorPage from "./pages/PhishingSimulatorPage";
+import PhishingDetectorPage from "./pages/PhishingDetectorPage";
 import PortScannerPage from "./pages/PortScannerPage";
 import CyberRangePage from "./pages/CyberRangePage";
 import NotFound from "./pages/NotFound";
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/threat-intel" element={<ThreatIntelPage />} />
             <Route path="/learning" element={<LearningPage />} />
             <Route path="/phishing-simulator" element={<PhishingSimulatorPage />} />
+            <Route path="/phishing-detector" element={<PhishingDetectorPage />} />
             <Route path="/port-scanner" element={<PortScannerPage />} />
             <Route path="/cyber-range" element={<CyberRangePage />} />
             <Route path="*" element={<NotFound />} />
