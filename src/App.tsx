@@ -41,6 +41,7 @@ const App = () => (
             <Route path="/threat-intel" element={<ThreatIntelPage />} />
             <Route path="/learning" element={<LearningPage />} />
             <Route path="/phishing-simulator" element={<PhishingSimulatorPage />} />
+            <Route path="/phishing-detector" element={<PhishingDetectorPage />} />
             <Route path="/port-scanner" element={<PortScannerPage />} />
             <Route path="/cyber-range" element={<CyberRangePage />} />
             <Route path="*" element={<NotFound />} />
