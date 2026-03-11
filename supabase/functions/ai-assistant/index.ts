@@ -11,11 +11,24 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const body = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
+    }
+
+    // Support both { messages: [...] } and { message: "string" } formats
+    let messages: Array<{ role: string; content: string }>;
+    if (body.messages && Array.isArray(body.messages)) {
+      messages = body.messages;
+    } else if (body.message && typeof body.message === "string") {
+      messages = [{ role: "user", content: body.message }];
+    } else {
+      return new Response(JSON.stringify({ error: "Invalid request: provide 'messages' array or 'message' string" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log("AI Assistant request received with", messages.length, "messages");
