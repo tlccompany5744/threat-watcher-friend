@@ -18,7 +18,7 @@ const HackerAvatar = () => {
   ];
 
   useEffect(() => {
-    const timers: NodeJS.Timeout[] = [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
     
     hackerLines.forEach((line, index) => {
       const timer = setTimeout(() => {
