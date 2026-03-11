@@ -18,7 +18,7 @@ const HackerAvatar = () => {
   ];
 
   useEffect(() => {
-    const timers: NodeJS.Timeout[] = [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
     
     hackerLines.forEach((line, index) => {
       const timer = setTimeout(() => {
@@ -33,7 +33,7 @@ const HackerAvatar = () => {
             clearInterval(typingInterval);
           }
         }, 50);
-        timers.push(typingInterval as unknown as NodeJS.Timeout);
+        timers.push(typingInterval as unknown as ReturnType<typeof setTimeout>);
       }, line.delay);
       timers.push(timer);
     });
