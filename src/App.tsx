@@ -15,6 +15,7 @@ import AssistantPage from "./pages/AssistantPage";
 import ThreatIntelPage from "./pages/ThreatIntelPage";
 import LearningPage from "./pages/LearningPage";
 import PhishingSimulatorPage from "./pages/PhishingSimulatorPage";
+import PhishingDetectorPage from "./pages/PhishingDetectorPage";
 import PortScannerPage from "./pages/PortScannerPage";
 import CyberRangePage from "./pages/CyberRangePage";
 import NotFound from "./pages/NotFound";
