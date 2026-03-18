@@ -77,18 +77,6 @@ const CyberRangePage = () => {
     if (!loading && !user) navigate('/auth');
   }, [user, loading, navigate]);
 
-  // Auto-start simulation on page load
-  useEffect(() => {
-    if (!loading && user && !hasAutoStarted.current && phase === 'idle') {
-      hasAutoStarted.current = true;
-      // Small delay so UI renders first
-      const timer = setTimeout(() => {
-        startSimulation();
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [loading, user, phase, startSimulation]);
-
   const resetSimulation = useCallback(() => {
     setPhase('idle');
     setCurrentStageIdx(-1);
@@ -107,23 +95,35 @@ const CyberRangePage = () => {
     detectionTimeRef.current = 0;
     decisionStartRef.current = 0;
     decisionTimeRef.current = 0;
+    hasAutoStarted.current = false;
   }, []);
 
-  // ─── REAL-TIME SIMULATION ENGINE ───
-  // Instead of a scripted for-loop, we use an interval that:
-  // 1. Reads LIVE system telemetry every tick
-  // 2. Feeds it into the behavior analyzer
-  // 3. Advances kill-chain stages based on accumulated threat + time thresholds
-  // 4. Pauses at DEFENSE_TRIGGER for user decision
-
   const startSimulation = useCallback(() => {
-    resetSimulation();
     setPhase('running');
     simStartRef.current = Date.now();
     setCurrentStageIdx(0);
     setExpandedStage(0);
     setStageStartTime(Date.now());
     setKillChainLog([`${killChainSteps[0].label}: ${killChainSteps[0].description}`]);
+    setFilesEncrypted(0);
+    setScoreResult(null);
+    setDecision(null);
+    setDecisionAdvice('');
+    setElapsedSeconds(0);
+    setBehaviorAnalysis(null);
+    setCurrentMetrics(null);
+  }, []);
+
+  // Auto-start simulation on page load
+  useEffect(() => {
+    if (!loading && user && !hasAutoStarted.current && phase === 'idle') {
+      hasAutoStarted.current = true;
+      const timer = setTimeout(() => {
+        startSimulation();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, user, phase, startSimulation]);
   }, [resetSimulation]);
 
   // Real-time tick: runs every 1.5s while simulation is active
