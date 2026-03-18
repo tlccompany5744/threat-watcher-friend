@@ -71,6 +71,8 @@ const CyberRangePage = () => {
   const decisionStartRef = useRef(0);
   const decisionTimeRef = useRef(0);
 
+  const hasAutoStarted = useRef(false);
+
   useEffect(() => {
     if (!loading && !user) navigate('/auth');
   }, [user, loading, navigate]);
@@ -93,24 +95,36 @@ const CyberRangePage = () => {
     detectionTimeRef.current = 0;
     decisionStartRef.current = 0;
     decisionTimeRef.current = 0;
+    hasAutoStarted.current = false;
   }, []);
 
-  // ─── REAL-TIME SIMULATION ENGINE ───
-  // Instead of a scripted for-loop, we use an interval that:
-  // 1. Reads LIVE system telemetry every tick
-  // 2. Feeds it into the behavior analyzer
-  // 3. Advances kill-chain stages based on accumulated threat + time thresholds
-  // 4. Pauses at DEFENSE_TRIGGER for user decision
-
   const startSimulation = useCallback(() => {
-    resetSimulation();
     setPhase('running');
     simStartRef.current = Date.now();
     setCurrentStageIdx(0);
     setExpandedStage(0);
     setStageStartTime(Date.now());
     setKillChainLog([`${killChainSteps[0].label}: ${killChainSteps[0].description}`]);
-  }, [resetSimulation]);
+    setFilesEncrypted(0);
+    setScoreResult(null);
+    setDecision(null);
+    setDecisionAdvice('');
+    setElapsedSeconds(0);
+    setBehaviorAnalysis(null);
+    setCurrentMetrics(null);
+  }, []);
+
+  // Auto-start simulation on page load
+  useEffect(() => {
+    if (!loading && user && !hasAutoStarted.current && phase === 'idle') {
+      hasAutoStarted.current = true;
+      const timer = setTimeout(() => {
+        startSimulation();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, user, phase, startSimulation]);
+  
 
   // Real-time tick: runs every 1.5s while simulation is active
   useEffect(() => {
@@ -300,14 +314,16 @@ const CyberRangePage = () => {
       {/* Controls */}
       <div className="flex flex-wrap gap-3 mb-6">
         {phase === 'idle' && (
-          <Button variant="danger" size="lg" onClick={startSimulation}>
-            <Play className="w-5 h-5 mr-2" /> LAUNCH REAL-TIME SIMULATION
+          <Button variant="danger" size="lg" onClick={startSimulation} className="animate-pulse">
+            <Play className="w-5 h-5 mr-2" /> LAUNCHING SIMULATION...
           </Button>
         )}
         {(phase === 'running' || phase === 'decision') && (
-          <Button variant="outline" onClick={resetSimulation}>
-            <Square className="w-4 h-4 mr-2" /> ABORT
-          </Button>
+          <>
+            <Button variant="outline" onClick={resetSimulation}>
+              <RotateCcw className="w-4 h-4 mr-2" /> RESTART
+            </Button>
+          </>
         )}
         {phase === 'complete' && (
           <>
@@ -559,9 +575,12 @@ const CyberRangePage = () => {
                 )}
               </div>
             ) : (
-              <p className="text-muted-foreground font-mono text-sm text-center py-8">
-                Launch simulation to see real-time behavioral analysis
-              </p>
+              <div className="text-center py-8">
+                <Brain className="w-10 h-10 text-primary/30 mx-auto mb-2 animate-pulse" />
+                <p className="text-muted-foreground font-mono text-sm">
+                  Initializing real-time behavioral analysis engine...
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -603,9 +622,12 @@ const CyberRangePage = () => {
                 )}
               </div>
             ) : (
-              <p className="text-muted-foreground font-mono text-sm text-center py-8">
-                Mentor insights will appear during simulation
-              </p>
+              <div className="text-center py-8">
+                <Eye className="w-10 h-10 text-accent/30 mx-auto mb-2 animate-pulse" />
+                <p className="text-muted-foreground font-mono text-sm">
+                  Mentor loading — simulation starting...
+                </p>
+              </div>
             )}
             {decisionAdvice && (
               <div className="mt-4 p-3 rounded-lg bg-accent/10 border border-accent/20 animate-fade-in">

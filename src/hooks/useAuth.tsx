@@ -3,8 +3,8 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
-const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
-const WARNING_BEFORE_MS = 60 * 1000;
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const WARNING_BEFORE_MS = 2 * 60 * 1000;
 
 interface AuthContextType {
   user: User | null;
