@@ -319,9 +319,11 @@ const CyberRangePage = () => {
           </Button>
         )}
         {(phase === 'running' || phase === 'decision') && (
-          <Button variant="outline" onClick={resetSimulation}>
-            <Square className="w-4 h-4 mr-2" /> ABORT
-          </Button>
+          <>
+            <Button variant="outline" onClick={resetSimulation}>
+              <RotateCcw className="w-4 h-4 mr-2" /> RESTART
+            </Button>
+          </>
         )}
         {phase === 'complete' && (
           <>
