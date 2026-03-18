@@ -314,8 +314,8 @@ const CyberRangePage = () => {
       {/* Controls */}
       <div className="flex flex-wrap gap-3 mb-6">
         {phase === 'idle' && (
-          <Button variant="danger" size="lg" onClick={startSimulation}>
-            <Play className="w-5 h-5 mr-2" /> LAUNCH REAL-TIME SIMULATION
+          <Button variant="danger" size="lg" onClick={startSimulation} className="animate-pulse">
+            <Play className="w-5 h-5 mr-2" /> LAUNCHING SIMULATION...
           </Button>
         )}
         {(phase === 'running' || phase === 'decision') && (
