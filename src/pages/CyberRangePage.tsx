@@ -622,9 +622,12 @@ const CyberRangePage = () => {
                 )}
               </div>
             ) : (
-              <p className="text-muted-foreground font-mono text-sm text-center py-8">
-                Mentor insights will appear during simulation
-              </p>
+              <div className="text-center py-8">
+                <Eye className="w-10 h-10 text-accent/30 mx-auto mb-2 animate-pulse" />
+                <p className="text-muted-foreground font-mono text-sm">
+                  Mentor loading — simulation starting...
+                </p>
+              </div>
             )}
             {decisionAdvice && (
               <div className="mt-4 p-3 rounded-lg bg-accent/10 border border-accent/20 animate-fade-in">
