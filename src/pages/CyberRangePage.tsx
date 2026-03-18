@@ -575,9 +575,12 @@ const CyberRangePage = () => {
                 )}
               </div>
             ) : (
-              <p className="text-muted-foreground font-mono text-sm text-center py-8">
-                Launch simulation to see real-time behavioral analysis
-              </p>
+              <div className="text-center py-8">
+                <Brain className="w-10 h-10 text-primary/30 mx-auto mb-2 animate-pulse" />
+                <p className="text-muted-foreground font-mono text-sm">
+                  Initializing real-time behavioral analysis engine...
+                </p>
+              </div>
             )}
           </div>
         </div>
