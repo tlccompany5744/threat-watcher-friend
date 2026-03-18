@@ -71,9 +71,23 @@ const CyberRangePage = () => {
   const decisionStartRef = useRef(0);
   const decisionTimeRef = useRef(0);
 
+  const hasAutoStarted = useRef(false);
+
   useEffect(() => {
     if (!loading && !user) navigate('/auth');
   }, [user, loading, navigate]);
+
+  // Auto-start simulation on page load
+  useEffect(() => {
+    if (!loading && user && !hasAutoStarted.current && phase === 'idle') {
+      hasAutoStarted.current = true;
+      // Small delay so UI renders first
+      const timer = setTimeout(() => {
+        startSimulation();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, user, phase, startSimulation]);
 
   const resetSimulation = useCallback(() => {
     setPhase('idle');
