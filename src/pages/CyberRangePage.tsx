@@ -124,7 +124,7 @@ const CyberRangePage = () => {
       return () => clearTimeout(timer);
     }
   }, [loading, user, phase, startSimulation]);
-  }, [resetSimulation]);
+  
 
   // Real-time tick: runs every 1.5s while simulation is active
   useEffect(() => {
