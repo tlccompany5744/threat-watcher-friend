@@ -334,7 +334,11 @@ const PhishingDetectorPage = () => {
           text += content.items.map((item: any) => item.str).join(" ") + "\n";
         }
         setEmailContent(text);
-        toast({ title: "PDF loaded", description: `${firstFile.name} (${pdf.numPages} pages) ready for analysis.` });
+        toast({ title: "PDF loaded", description: `${firstFile.name} (${pdf.numPages} pages) — auto-scanning...` });
+        // Auto-trigger scan after setting content
+        setTimeout(() => {
+          autoScanRef.current = true;
+        }, 100);
       } catch {
         toast({ title: "PDF Error", description: "Could not extract text from PDF.", variant: "destructive" });
       }
@@ -343,7 +347,10 @@ const PhishingDetectorPage = () => {
       reader.onload = (e) => {
         const content = e.target?.result as string;
         setEmailContent(content);
-        toast({ title: "File loaded", description: `${firstFile.name} ready for analysis.` });
+        toast({ title: "File loaded", description: `${firstFile.name} — auto-scanning...` });
+        setTimeout(() => {
+          autoScanRef.current = true;
+        }, 100);
       };
       reader.readAsText(firstFile);
     }
