@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs`;
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -307,10 +311,10 @@ const PhishingDetectorPage = () => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const ext = file.name.toLowerCase();
-      if (ext.endsWith(".eml") || ext.endsWith(".msg") || ext.endsWith(".txt") || ext.endsWith(".mhtml")) {
+      if (ext.endsWith(".eml") || ext.endsWith(".msg") || ext.endsWith(".txt") || ext.endsWith(".mhtml") || ext.endsWith(".pdf")) {
         validFiles.push(file);
       } else {
-        toast({ title: "Unsupported file", description: `${file.name} — only .eml, .msg, .txt, .mhtml files are supported.`, variant: "destructive" });
+        toast({ title: "Unsupported file", description: `${file.name} — only .eml, .msg, .txt, .mhtml, .pdf files are supported.`, variant: "destructive" });
       }
     }
     if (validFiles.length === 0) return;
@@ -318,13 +322,31 @@ const PhishingDetectorPage = () => {
     setUploadedFiles((prev) => [...prev, ...validFiles]);
 
     // Read first file content into the textarea for analysis
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      setEmailContent(content);
-      toast({ title: "File loaded", description: `${validFiles[0].name} ready for analysis.` });
-    };
-    reader.readAsText(validFiles[0]);
+    const firstFile = validFiles[0];
+    if (firstFile.name.toLowerCase().endsWith(".pdf")) {
+      try {
+        const arrayBuffer = await firstFile.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let text = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map((item: any) => item.str).join(" ") + "\n";
+        }
+        setEmailContent(text);
+        toast({ title: "PDF loaded", description: `${firstFile.name} (${pdf.numPages} pages) ready for analysis.` });
+      } catch {
+        toast({ title: "PDF Error", description: "Could not extract text from PDF.", variant: "destructive" });
+      }
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setEmailContent(content);
+        toast({ title: "File loaded", description: `${firstFile.name} ready for analysis.` });
+      };
+      reader.readAsText(firstFile);
+    }
   }, [toast]);
 
   // Handle drag & drop
@@ -362,12 +384,25 @@ const PhishingDetectorPage = () => {
         { id, fileName: file.name, content: "", score: 0, level: "SCANNING", indicators: [], timestamp: new Date(), status: "scanning" },
       ]);
 
-      // Read file
-      const content = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string || "");
-        reader.readAsText(file);
-      });
+      // Read file (support PDF)
+      let content = "";
+      if (file.name.toLowerCase().endsWith(".pdf")) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const tc = await page.getTextContent();
+            content += tc.items.map((item: any) => item.str).join(" ") + "\n";
+          }
+        } catch { content = "[PDF extraction failed]"; }
+      } else {
+        content = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string || "");
+          reader.readAsText(file);
+        });
+      }
 
       // Simulate scan delay for real-time feel
       await new Promise((r) => setTimeout(r, 800));
@@ -489,7 +524,7 @@ Keep it concise and professional.`;
               Email Input
             </CardTitle>
             <CardDescription className="font-mono text-xs">
-              Upload .eml / .msg / .txt email files or paste content directly for analysis
+              Upload .eml / .msg / .txt / .pdf email files or paste content directly for analysis
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -508,13 +543,13 @@ Keep it concise and professional.`;
               <div>
                 <p className="font-mono text-sm text-foreground">Drop email files here or click to browse</p>
                 <p className="font-mono text-xs text-muted-foreground mt-1">
-                  Supports .eml, .msg, .txt, .mhtml files (multiple files for batch monitoring)
+                  Supports .eml, .msg, .txt, .mhtml, .pdf files (multiple files for batch monitoring)
                 </p>
               </div>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".eml,.msg,.txt,.mhtml"
+                accept=".eml,.msg,.txt,.mhtml,.pdf"
                 multiple
                 onChange={(e) => handleFileUpload(e.target.files)}
                 className="hidden"
