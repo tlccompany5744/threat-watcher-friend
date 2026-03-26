@@ -299,10 +299,19 @@ const PhishingDetectorPage = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gaugeRef = useRef<HTMLDivElement>(null);
+  const autoScanRef = useRef(false);
 
   useEffect(() => {
     if (!loading && !user) navigate("/auth");
   }, [user, loading, navigate]);
+
+  // Auto-scan when file is uploaded
+  useEffect(() => {
+    if (autoScanRef.current && emailContent.trim() && !isScanning) {
+      autoScanRef.current = false;
+      runScan();
+    }
+  }, [emailContent]);
 
   // Handle file upload
   const handleFileUpload = useCallback(async (files: FileList | null) => {
